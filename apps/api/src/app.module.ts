@@ -1,0 +1,43 @@
+import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { validateEnv } from './config/env.validation';
+import { AuthModule } from './modules/auth/auth.module';
+import { VehiclesModule } from './modules/vehicles/vehicles.module';
+import { RoutingModule } from './modules/routing/routing.module';
+import { TrackingModule } from './modules/tracking/tracking.module';
+import { AlertsModule } from './modules/alerts/alerts.module';
+import { DriversModule } from './modules/drivers/drivers.module';
+
+@Module({
+  imports: [
+    // ─── Configuración Global ────────────────────────────────────
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: validateEnv,
+      cache: true,
+    }),
+
+    // ─── Rate Limiting (DoS protection) ─────────────────────────
+    // short: 30 req / 10s por IP (protege endpoints de ping GPS)
+    // long:  300 req / 60s por IP (protege rutas de consulta)
+    ThrottlerModule.forRoot([
+      { name: 'short', ttl: 10_000, limit: 30 },
+      { name: 'long',  ttl: 60_000, limit: 300 },
+    ]),
+
+    // ─── Módulos de Dominio ───────────────────────────────────────
+    AuthModule,
+    VehiclesModule,
+    RoutingModule,
+    TrackingModule,
+    AlertsModule,
+    DriversModule,
+  ],
+  providers: [
+    // Aplica ThrottlerGuard globalmente a todos los controllers
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
+})
+export class AppModule {}

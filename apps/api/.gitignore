@@ -1,0 +1,23 @@
+# ─── NestJS API — .gitignore ─────────────────────────────────────────────────
+
+# Dependencias
+node_modules/
+
+# Build artifacts (dist puede embeber valores de env en algunos bundlers)
+dist/
+build/
+*.tsbuildinfo
+
+# Environment variables — NUNCA subir al repo
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

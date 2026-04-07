@@ -1,0 +1,28 @@
+{
+  "name": "@zona-zero/domain",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Core domain logic: entities, value objects, ports and use cases. Zero external dependencies.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "dev": "tsc --watch",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0",
+    "vitest": "^3.0.0"
+  }
+}

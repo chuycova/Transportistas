@@ -1,0 +1,78 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+.expo/
+out/
+
+# Turborepo cache
+.turbo/
+
+# Environment variables — NUNCA subir al repo
+.env
+.env.*
+!.env.example
+*.local
+
+# Supabase local
+supabase/.temp/
+supabase/.branches/
+supabase/seed.sql
+
+# Build artifacts (pueden contener env vars embebidas)
+.next/
+dist/
+build/
+out/
+
+# Expo / React Native
+.expo/
+ios/Pods/
+android/.gradle/
+android/build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+
+# Firebase
+google-services.json
+GoogleService-Info.plist
+firebase-adminsdk-*.json
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Tests
+coverage/
+*.lcov
+
+# TypeScript
+*.tsbuildinfo
+
+# Compiled JS artifacts in packages (tsc compila en src/ en lugar de dist/)
+# Los .js y .js.map son generados, no se versionan
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map

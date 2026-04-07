@@ -1,0 +1,44 @@
+# ─── Expo / React Native — .gitignore ───────────────────────────────────────
+
+# Dependencias
+node_modules/
+
+# Expo build
+dist/
+build/
+web-build/
+.expo/
+.expo-shared/
+
+# Environment variables — NUNCA subir al repo
+.env
+.env.*
+!.env.example
+
+# iOS (Xcode) — .xcode.env.local ya ignorado por ios/.gitignore
+# Nunca subir certificados, provisioning profiles ni keystores
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Firebase — si se agrega en el futuro
+google-services.json
+GoogleService-Info.plist
+firebase-adminsdk-*.json
+
+# EAS
+eas.json.bak
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
