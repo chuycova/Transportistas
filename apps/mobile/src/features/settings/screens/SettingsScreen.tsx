@@ -10,12 +10,17 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { signOut, supabase } from '@lib/supabase';
 import type { User } from '@supabase/supabase-js';
+
+type SettingsNavigationProp = NativeStackNavigationProp<any>;
 
 export function SettingsScreen() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
+  const navigation = useNavigation<SettingsNavigationProp>();
 
   useEffect(() => {
     void supabase.auth.getUser().then(({ data }) => setUser(data.user));
@@ -70,6 +75,16 @@ export function SettingsScreen() {
           <Text style={styles.rowValue}>Desarrollo</Text>
         </View>
       </View>
+
+      {/* Ajustes Generales */}
+      <TouchableOpacity
+        style={styles.generalSettingsBtn}
+        onPress={() => navigation.navigate('GeneralSettings')}
+        accessibilityLabel="Ajustes Generales"
+        accessibilityRole="button"
+      >
+        <Text style={styles.generalSettingsText}>Ajustes Generales</Text>
+      </TouchableOpacity>
 
       {/* Cerrar sesión */}
       <TouchableOpacity
@@ -157,4 +172,14 @@ const styles = StyleSheet.create({
     borderColor: '#FF444444',
   },
   logoutText: { color: '#FF4444', fontSize: 16, fontWeight: '600' },
+  generalSettingsBtn: {
+    backgroundColor: '#12121C',
+    borderRadius: 14,
+    padding: 18,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2A2A3F',
+    marginBottom: 16,
+  },
+  generalSettingsText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
 });

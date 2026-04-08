@@ -15,12 +15,14 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@lib/supabase';
 import { LoginScreen } from '@features/auth/screens/LoginScreen';
 import { TrackingScreen } from '@features/tracking/screens/TrackingScreen';
+import { GeneralSettingsScreen } from '@features/settings/screens/GeneralSettingsScreen';
 import { MainTabNavigator } from './MainTabNavigator';
 
 export type RootStackParamList = {
   Login: undefined;
   MainTabs: undefined;
   Tracking: { routeId: string; routeName: string };
+  GeneralSettings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -78,6 +80,19 @@ export function RootNavigator() {
                 title: route.params.routeName,
                 headerBackTitle: 'Rutas',
               })}
+            />
+            <Stack.Screen
+              name="GeneralSettings"
+              component={GeneralSettingsScreen}
+              options={{
+                headerShown: true,
+                headerStyle: { backgroundColor: '#F5F5F7' },
+                headerTintColor: '#0A0A0F',
+                headerTitleStyle: { fontWeight: '600' },
+                headerShadowVisible: false,
+                title: 'Ajustes Generales',
+                headerBackTitle: 'Volver',
+              }}
             />
           </>
         ) : (
