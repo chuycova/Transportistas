@@ -53,3 +53,40 @@ export function useDeleteRoute() {
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   });
 }
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
+
+/**
+ * Asigna un conductor (driverId) a una ruta (routeId).
+ * La lógica del backend enlaza el vehículo del conductor a la ruta.
+ * Solo monitores pueden llamar a este hook — el backend lanza 403 si no.
+ */
+export function useAssignDriverToRoute() {
+  const qc = useQueryClient();
+  const supabase = createSupabaseBrowserClient();
+
+  return useMutation<void, Error, { routeId: string; driverId: string }>({
+    mutationFn: async ({ routeId, driverId }) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sin sesión activa');
+
+      const res = await fetch(
+        `${BACKEND_URL}/api/v1/routes/${routeId}/assign-driver`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ driverId }),
+        },
+      );
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEY });
+      qc.invalidateQueries({ queryKey: ['drivers'] });
+    },
+  });
+}
+

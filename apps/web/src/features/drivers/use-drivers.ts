@@ -66,6 +66,9 @@ export function useInviteDriver() {
       if (!res.ok) throw new Error(await res.text());
       return res.json() as Promise<{ id: string; email: string }>;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['drivers'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['drivers'] });
+      void qc.invalidateQueries({ queryKey: ['users'] });
+    },
   });
 }

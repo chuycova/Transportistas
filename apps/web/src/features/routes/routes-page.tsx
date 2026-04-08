@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Route, X, Trash2, ToggleLeft, ToggleRight, MapPin, Car, Navigation } from 'lucide-react';
+import { Plus, Route, X, Trash2, ToggleLeft, ToggleRight, MapPin, Car, Navigation, UserCheck } from 'lucide-react';
 import { APIProvider, Map as GMap, AdvancedMarker, Pin, Polyline } from '@vis.gl/react-google-maps';
 import { useVehicles } from '../vehicles/use-vehicles';
 import type { MapMouseEvent } from '@vis.gl/react-google-maps';
@@ -13,6 +13,7 @@ import {
   type RouteRow,
   type Coordinate,
 } from './use-routes';
+import { AssignDriverModal } from './assign-driver-modal';
 
 const STATUS_META: Record<string, { label: string; className: string }> = {
   active:   { label: 'Activa',    className: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' },
@@ -478,6 +479,7 @@ export function RoutesPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<RouteRow | null>(null);
+  const [assignTarget, setAssignTarget] = useState<RouteRow | null>(null);
 
   const stats = {
     total: routes.length,
@@ -575,6 +577,13 @@ export function RoutesPage() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                    {r.status === 'active' && (
+                      <button type="button" onClick={() => setAssignTarget(r)}
+                        className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs text-primary hover:bg-primary/10 transition-colors"
+                        title="Asignar a conductor">
+                        <UserCheck className="h-3.5 w-3.5" /> Asignar
+                      </button>
+                    )}
                     <button type="button" onClick={() => toggleStatus(r)}
                       className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-1.5 text-xs hover:bg-muted transition-colors"
                       title={r.status === 'active' ? 'Desactivar' : 'Activar'}>
@@ -638,6 +647,18 @@ export function RoutesPage() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de asignación de conductor */}
+      <AnimatePresence>
+        {assignTarget && (
+          <AssignDriverModal
+            routeId={assignTarget.id}
+            routeName={assignTarget.name}
+            open={!!assignTarget}
+            onClose={() => setAssignTarget(null)}
+          />
         )}
       </AnimatePresence>
     </div>

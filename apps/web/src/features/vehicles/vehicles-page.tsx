@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Truck, Car, X, Pencil, Trash2, ChevronDown,
-  Smartphone, UserPlus, UserCheck, RefreshCw, Mail,
+  Smartphone, UserPlus, UserCheck, RefreshCw, Mail, Eye,
 } from 'lucide-react';
 import {
   useVehicles,
@@ -15,6 +15,7 @@ import {
 } from './use-vehicles';
 import { useTrackingStore } from '../../stores/use-tracking-store';
 import { useDrivers, useInviteDriver, type Driver } from '../drivers/use-drivers';
+import { useRouter } from 'next/navigation';
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   active:      { label: 'Activo',        className: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' },
@@ -452,6 +453,7 @@ export function VehiclesPage() {
   const { data: vehicles = [], isLoading, error } = useVehicles();
   const deleteVehicle = useDeleteVehicle();
   const liveVehicles = useTrackingStore((s) => s.vehicles);
+  const router = useRouter();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Vehicle | null>(null);
@@ -582,6 +584,13 @@ export function VehiclesPage() {
 
                     {/* Actions */}
                     <div className="mt-4 flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/vehicles/${v.id}`)}
+                        className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs text-primary hover:bg-primary/10 transition-colors"
+                      >
+                        <Eye className="h-3 w-3" /> Ver detalle
+                      </button>
                       <button
                         type="button"
                         onClick={() => openEdit(v)}
