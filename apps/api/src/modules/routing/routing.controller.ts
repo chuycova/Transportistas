@@ -1,14 +1,15 @@
 import {
   Controller, Get, Post, Put, Delete, Patch,
   Body, Param, Query, UseGuards, HttpCode, HttpStatus, Logger,
+  NotFoundException, Inject,
 } from '@nestjs/common';
-import { Inject } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
 import { TenantId, AuthUser, type AuthenticatedUser } from '../../common/decorators/auth.decorators';
 import { ROUTE_REPOSITORY } from '../../common/tokens';
 import type { IRouteRepository, Coordinate, RouteStop, RouteStatus } from '@zona-zero/domain';
 import { GoogleDirectionsAdapter } from './infrastructure/google-directions.adapter';
+import { SUPABASE_ADMIN_CLIENT, type SupabaseAdminClient } from '../../infrastructure/supabase-admin.provider';
 
 interface CreateRouteDto {
   name: string;
@@ -31,10 +32,12 @@ export class RoutingController {
   constructor(
     @Inject(ROUTE_REPOSITORY) private readonly repo: IRouteRepository,
     private readonly directions: GoogleDirectionsAdapter,
+    @Inject(SUPABASE_ADMIN_CLIENT) private readonly adminClient: SupabaseAdminClient,
   ) {}
 
-  /** GET /api/v1/routes — Lista rutas del tenant */
+  /** GET /api/v1/routes — Lista rutas del tenant (solo monitores) */
   @Get()
+  @Roles('admin', 'super_admin', 'operator')
   findAll(
     @TenantId() tenantId: string,
     @Query('status') status?: RouteStatus,
@@ -135,5 +138,65 @@ export class RoutingController {
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id') id: string, @TenantId() tenantId: string) {
     return this.repo.delete(id, tenantId);
+  }
+
+  /**
+   * PATCH /api/v1/routes/:id/assign-driver
+   *
+   * Asigna una ruta a un conductor: enlaza el vehículo del conductor con la ruta.
+   * Solo monitores (admin, operator) pueden hacer esta operación.
+   * El conductor se selecciona por `driverId` (profiles.id).
+   */
+  @Patch(':id/assign-driver')
+  @Roles('admin', 'super_admin', 'operator')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async assignDriver(
+    @Param('id') routeId: string,
+    @Body('driverId') driverId: string,
+    @TenantId() tenantId: string,
+  ): Promise<void> {
+    const adminDb = this.adminClient;
+
+    // 1. Verificar que el conductor existe y pertenece al tenant
+    const { data: profile } = await adminDb
+      .from('profiles')
+      .select('id, role, tenant_id')
+      .eq('id', driverId)
+      .eq('tenant_id', tenantId)
+      .eq('role', 'driver')
+      .single();
+
+    if (!profile) {
+      throw new NotFoundException(
+        `Conductor ${driverId} no encontrado en este tenant`,
+      );
+    }
+
+    // 2. Encontrar el vehículo asignado al conductor
+    const { data: vehicle } = await adminDb
+      .from('vehicles')
+      .select('id')
+      .eq('assigned_driver_id', driverId)
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+
+    if (!vehicle) {
+      throw new NotFoundException(
+        `El conductor no tiene vehículo asignado. Asígnale un vehículo primero.`,
+      );
+    }
+
+    // 3. Enlazar la ruta al vehículo del conductor
+    const { error } = await adminDb
+      .from('routes')
+      .update({ vehicle_id: vehicle.id })
+      .eq('id', routeId)
+      .eq('tenant_id', tenantId);
+
+    if (error) throw new Error(error.message);
+
+    this.logger.log(
+      `Route ${routeId} assigned to driver ${driverId} via vehicle ${vehicle.id}`,
+    );
   }
 }

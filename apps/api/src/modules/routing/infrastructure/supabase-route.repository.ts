@@ -11,6 +11,7 @@ import type {
   RouteStatus,
   Coordinate,
 } from '@zona-zero/domain';
+import { mapBaseFields, isNotFound } from '../../../infrastructure/supabase.helpers';
 
 /** Convierte un array de Coordinates a formato WKT LINESTRING para PostGIS */
 function toLineStringWKT(points: Coordinate[]): string {
@@ -29,7 +30,7 @@ function mapRow(row: Record<string, unknown>): Route {
 
   return {
     id: row.id as string,
-    tenantId: row.tenant_id as string,
+    ...mapBaseFields(row),
     name: row.name as string,
     description: row.description as string | undefined,
     status: row.status as RouteStatus,
@@ -49,7 +50,6 @@ function mapRow(row: Record<string, unknown>): Route {
     estimatedDurationS: row.estimated_duration_s as number | undefined,
     deviationThresholdM: row.deviation_threshold_m as number | undefined,
     createdBy: row.created_by as string | undefined,
-    createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
   };
 }
@@ -68,7 +68,7 @@ export class SupabaseRouteRepository implements IRouteRepository {
       .eq('tenant_id', tenantId)
       .single();
 
-    if (error?.code === 'PGRST116') return null;
+    if (isNotFound(error)) return null;
     if (error) throw new Error(error.message);
     return data ? mapRow(data as Record<string, unknown>) : null;
   }

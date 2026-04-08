@@ -1,5 +1,5 @@
 // Repositorio de Alertas con Supabase
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { getServerSupabaseClient } from '@zona-zero/infrastructure';
 import type {
   IAlertRepository,
@@ -7,11 +7,12 @@ import type {
   Alert,
   CreateAlertInput,
 } from '@zona-zero/domain';
+import { mapBaseFields, isNotFound } from '../../../infrastructure/supabase.helpers';
 
 function mapRow(row: Record<string, unknown>): Alert {
   return {
     id: row['id'] as string,
-    tenantId: row['tenant_id'] as string,
+    ...mapBaseFields(row),
     vehicleId: row['vehicle_id'] as string,
     routeId: row['route_id'] as string | undefined,
     locationId: row['location_id'] as number | undefined,
@@ -23,7 +24,6 @@ function mapRow(row: Record<string, unknown>): Alert {
     resolvedById: row['resolved_by'] as string | undefined,
     resolutionNote: row['resolution_note'] as string | undefined,
     notificationSent: (row['notification_sent'] as boolean) ?? false,
-    createdAt: new Date(row['created_at'] as string),
   };
 }
 
@@ -41,7 +41,7 @@ export class SupabaseAlertRepository implements IAlertRepository {
       .eq('tenant_id', tenantId)
       .single();
 
-    if (error?.code === 'PGRST116') return null;
+    if (isNotFound(error)) return null;
     if (error) throw new Error(error.message);
     return data ? mapRow(data as Record<string, unknown>) : null;
   }

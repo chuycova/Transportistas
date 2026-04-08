@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -9,7 +9,10 @@ import { RoutingModule } from './modules/routing/routing.module';
 import { TrackingModule } from './modules/tracking/tracking.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { DriversModule } from './modules/drivers/drivers.module';
+import { DriverModule } from './modules/driver/driver.module';
+import { supabaseAdminProvider } from './infrastructure/supabase-admin.provider';
 
+@Global()
 @Module({
   imports: [
     // ─── Configuración Global ────────────────────────────────────
@@ -34,10 +37,17 @@ import { DriversModule } from './modules/drivers/drivers.module';
     TrackingModule,
     AlertsModule,
     DriversModule,
+    DriverModule,
   ],
   providers: [
+    // ─── Infraestructura compartida (global) ─────────────────────
+    supabaseAdminProvider,          // SUPABASE_ADMIN_CLIENT: service_role singleton
+
     // Aplica ThrottlerGuard globalmente a todos los controllers
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
+  exports: [
+    supabaseAdminProvider,          // Re-exportar para que @Global() lo propague
   ],
 })
 export class AppModule {}

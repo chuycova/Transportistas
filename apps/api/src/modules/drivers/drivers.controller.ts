@@ -1,10 +1,10 @@
 import {
-  Controller, Get, Post, Body, UseGuards, HttpCode, HttpStatus, Logger,
+  Controller, Get, Post, Body, UseGuards, HttpCode, HttpStatus, Logger, Inject,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
 import { TenantId, AuthUser, type AuthenticatedUser } from '../../common/decorators/auth.decorators';
-import { createClient } from '@supabase/supabase-js';
+import { SUPABASE_ADMIN_CLIENT, type SupabaseAdminClient } from '../../infrastructure/supabase-admin.provider';
 
 interface InviteDriverDto {
   email: string;
@@ -17,15 +17,9 @@ interface InviteDriverDto {
 export class DriversController {
   private readonly logger = new Logger(DriversController.name);
 
-  // Service-role client — solo para operaciones de admin (invite user)
-  // La service_role key NUNCA se expone al frontend
-  private get adminClient() {
-    return createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      { auth: { autoRefreshToken: false, persistSession: false } },
-    );
-  }
+  constructor(
+    @Inject(SUPABASE_ADMIN_CLIENT) private readonly adminClient: SupabaseAdminClient,
+  ) {}
 
   /**
    * GET /api/v1/drivers

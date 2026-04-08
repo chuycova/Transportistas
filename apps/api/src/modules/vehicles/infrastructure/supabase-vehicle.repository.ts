@@ -10,12 +10,13 @@ import type {
   UpdateVehicleInput,
   VehicleStatus,
 } from '@zona-zero/domain';
+import { mapBaseFields, isNotFound } from '../../../infrastructure/supabase.helpers';
 
 // Mapea la fila cruda de Supabase al tipo Vehicle del dominio
 function mapRow(row: Record<string, unknown>): Vehicle {
   return {
     id: row['id'] as string,
-    tenantId: row['tenant_id'] as string,
+    ...mapBaseFields(row),
     plate: row['plate'] as string,
     alias: row['alias'] as string | undefined,
     brand: row['brand'] as string | undefined,
@@ -26,7 +27,6 @@ function mapRow(row: Record<string, unknown>): Vehicle {
     color: row['color'] as string | undefined,
     assignedDriverId: row['assigned_driver_id'] as string | undefined,
     metadata: (row['metadata'] as Record<string, unknown>) ?? {},
-    createdAt: new Date(row['created_at'] as string),
     updatedAt: new Date(row['updated_at'] as string),
   };
 }
@@ -45,7 +45,7 @@ export class SupabaseVehicleRepository implements IVehicleRepository {
       .eq('tenant_id', tenantId)
       .single();
 
-    if (error && error.code === 'PGRST116') return null; // Not found
+    if (isNotFound(error)) return null; // Not found
     if (error) throw new Error(error.message);
     return data ? mapRow(data as Record<string, unknown>) : null;
   }

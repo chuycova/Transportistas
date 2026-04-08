@@ -8,11 +8,12 @@ import type {
   LocationHistoryFilters,
   LatestLocationResult,
 } from '@zona-zero/domain';
+import { mapBaseFields } from '../../../infrastructure/supabase.helpers';
 
 function mapRow(row: Record<string, unknown>): Location {
   return {
-    id: row['id'] as number,
-    tenantId: row['tenant_id'] as string,
+    id: row['id'] as number,      // number, no string — no va en mapBaseFields
+    ...mapBaseFields(row),
     vehicleId: row['vehicle_id'] as string,
     routeId: row['route_id'] as string | undefined,
     coordinate: {
