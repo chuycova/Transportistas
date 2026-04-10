@@ -10,6 +10,7 @@ import { TrackingModule } from './modules/tracking/tracking.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { DriversModule } from './modules/drivers/drivers.module';
 import { DriverModule } from './modules/driver/driver.module';
+import { GeofencesModule } from './modules/geofences/geofences.module';
 import { supabaseAdminProvider } from './infrastructure/supabase-admin.provider';
 
 @Global()
@@ -38,6 +39,7 @@ import { supabaseAdminProvider } from './infrastructure/supabase-admin.provider'
     AlertsModule,
     DriversModule,
     DriverModule,
+    GeofencesModule,
   ],
   providers: [
     // ─── Infraestructura compartida (global) ─────────────────────

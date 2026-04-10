@@ -30,6 +30,12 @@ export const LOCATION_UPDATE_EVENT = 'location:update';
 /** Nombre del evento de alerta de desvío */
 export const DEVIATION_ALERT_EVENT = 'alert:deviation';
 
+/** Alerta de emergencia (botón de pánico) */
+export const EMERGENCY_ALERT_EVENT = 'alert:emergency';
+
+/** Alerta de geocerca (entrada/salida) */
+export const GEOFENCE_ALERT_EVENT = 'alert:geofence';
+
 /** Contexto de tracking registrado por socket */
 interface DriverSession {
   vehicleId: string;
@@ -54,6 +60,8 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   /** Callback inyectado post-construcción para evitar dependencia circular */
   private processPingFn?: (ping: Parameters<TrackingGateway['onLocationPing']>[1]) => void;
+  /** Callback para manejar alertas de pánico vía socket */
+  private processPanicFn?: (payload: { vehicleId: string; tenantId: string; coordinate?: { lat: number; lng: number } }) => Promise<void>;
 
   constructor(
     @Inject(VEHICLE_REPOSITORY) private readonly vehicleRepo: IVehicleRepository,
@@ -62,6 +70,11 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   /** El ProcessLocationUseCase registra su callback aquí al iniciar el módulo */
   setProcessPingCallback(fn: (ping: Parameters<TrackingGateway['onLocationPing']>[1]) => void): void {
     this.processPingFn = fn;
+  }
+
+  /** Registra el handler de pánico (evita dependencia circular con TrackingController) */
+  setPanicCallback(fn: (payload: { vehicleId: string; tenantId: string; coordinate?: { lat: number; lng: number } }) => Promise<void>): void {
+    this.processPanicFn = fn;
   }
 
   handleConnection(client: Socket) {
@@ -142,6 +155,23 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   /**
+   * Recibe alerta de pánico del móvil vía socket.
+   * Evento: `panic:alert`
+   * Payload: { vehicleId, tenantId, coordinate? }
+   */
+  @SubscribeMessage('panic:alert')
+  async onPanicAlert(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { vehicleId: string; tenantId: string; coordinate?: { lat: number; lng: number } },
+  ) {
+    this.logger.warn(`PÁNICO recibido vía socket: vehicleId=${payload.vehicleId}`);
+    if (this.processPanicFn) {
+      await this.processPanicFn(payload);
+    }
+    return { event: 'panic:received' };
+  }
+
+  /**
    * Recibe un ping GPS del móvil y lo delega al ProcessLocationUseCase.
    * Evento: `location:ping`
    */
@@ -180,6 +210,34 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server.to(room).emit(DEVIATION_ALERT_EVENT, {
       vehicleId,
       deviationM: Math.round(deviationM),
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /** Emite alerta de botón de pánico al dashboard */
+  emitEmergencyAlert(
+    tenantId: string,
+    vehicleId: string,
+    coordinate?: { lat: number; lng: number },
+  ): void {
+    this.server.to(`tenant:${tenantId}`).emit(EMERGENCY_ALERT_EVENT, {
+      vehicleId,
+      coordinate,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /** Emite alerta de geocerca (entrada o salida) al dashboard */
+  emitGeofenceAlert(
+    tenantId: string,
+    vehicleId: string,
+    eventType: 'geofence_entry' | 'geofence_exit',
+    geofenceName: string,
+  ): void {
+    this.server.to(`tenant:${tenantId}`).emit(GEOFENCE_ALERT_EVENT, {
+      vehicleId,
+      eventType,
+      geofenceName,
       timestamp: new Date().toISOString(),
     });
   }

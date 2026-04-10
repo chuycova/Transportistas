@@ -1,10 +1,9 @@
 import {
-  Controller, Post, Get, Body, Query, Param, UseGuards, HttpCode, HttpStatus,
+  Controller, Post, Get, Body, Query, Param, UseGuards, HttpCode, HttpStatus, Inject,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TenantId } from '../../common/decorators/auth.decorators';
 import { ProcessLocationUseCase, type IncomingPingDto } from './application/process-location.use-case';
-import { Inject } from '@nestjs/common';
 import { LOCATION_REPOSITORY } from '../../common/tokens';
 import type { ILocationRepository } from '@zona-zero/domain';
 
@@ -56,6 +55,20 @@ export class TrackingController {
         recordedAt: new Date(p.recordedAt),
       })),
     );
+  }
+
+  /**
+   * POST /api/v1/tracking/panic
+   * El conductor activa el botón de pánico desde la app (fallback REST si socket no disponible).
+   * Delega al ProcessLocationUseCase para persistir alerta y emitir WS.
+   */
+  @Post('panic')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async receivePanic(
+    @Body() body: { vehicleId: string; coordinate?: { lat: number; lng: number } },
+    @TenantId() tenantId: string,
+  ) {
+    await this.processLocation.handlePanic({ vehicleId: body.vehicleId, tenantId, coordinate: body.coordinate });
   }
 
   /**

@@ -14,14 +14,12 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@lib/supabase';
 import { LoginScreen } from '@features/auth/screens/LoginScreen';
-import { TrackingScreen } from '@features/tracking/screens/TrackingScreen';
 import { GeneralSettingsScreen } from '@features/settings/screens/GeneralSettingsScreen';
 import { MainTabNavigator } from './MainTabNavigator';
 
 export type RootStackParamList = {
   Login: undefined;
   MainTabs: undefined;
-  Tracking: { routeId: string; routeName: string };
   GeneralSettings: undefined;
 };
 
@@ -68,19 +66,6 @@ export function RootNavigator() {
         {session ? (
           <>
             <Stack.Screen name="MainTabs" component={MainTabNavigator} />
-            <Stack.Screen
-              name="Tracking"
-              component={TrackingScreen}
-              options={({ route }) => ({
-                headerShown: true,
-                headerStyle: { backgroundColor: '#12121C' },
-                headerTintColor: '#FFFFFF',
-                headerTitleStyle: { fontWeight: '600' },
-                headerShadowVisible: false,
-                title: route.params.routeName,
-                headerBackTitle: 'Rutas',
-              })}
-            />
             <Stack.Screen
               name="GeneralSettings"
               component={GeneralSettingsScreen}

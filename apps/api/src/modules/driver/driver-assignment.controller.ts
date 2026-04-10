@@ -82,7 +82,11 @@ export class DriverAssignmentController {
     }
 
     // 2. Vehículo asignado al conductor
-    const { data: vehicle, error: vehicleError } = await db
+    // Primero intenta por assigned_driver_id (conductor principal), si no
+    // busca en vehicle_user_assignments (asignación múltiple).
+    let vehicle: { id: string; plate: string; alias: string | null; color: string | null; vehicle_type: string } | null = null;
+
+    const { data: vehicleByDriver, error: vehicleError } = await db
       .from('vehicles')
       .select('id, plate, alias, color, vehicle_type')
       .eq('assigned_driver_id', user.id)
@@ -91,6 +95,32 @@ export class DriverAssignmentController {
 
     if (vehicleError) {
       this.logger.warn(`Vehicle lookup error for driver ${user.id}: ${vehicleError.message}`);
+    }
+
+    vehicle = vehicleByDriver ?? null;
+
+    // Si no está como conductor principal, buscar en asignaciones múltiples
+    if (!vehicle) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: assignment } = await (db as any)
+        .from('vehicle_user_assignments')
+        .select('vehicle_id')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .order('assigned_at', { ascending: false })
+        .limit(1)
+        .maybeSingle() as { data: { vehicle_id: string } | null };
+
+      if (assignment?.vehicle_id) {
+        const { data: assignedVehicle } = await db
+          .from('vehicles')
+          .select('id, plate, alias, color, vehicle_type')
+          .eq('id', assignment.vehicle_id)
+          .eq('tenant_id', user.tenantId)
+          .maybeSingle();
+
+        vehicle = assignedVehicle ?? null;
+      }
     }
 
     if (!vehicle) {
@@ -146,7 +176,9 @@ export class DriverAssignmentController {
         .map(([lng, lat]) => ({ lat, lng }));
 
       // Paradas ordenadas sin datos internos (sin tenant_id, sin route_id)
-      const stops = ((route.stops ?? []) as Array<{
+      // route.stops puede llegar como objeto o null desde Supabase JSON — normalizar a array
+      const rawStops = Array.isArray(route.stops) ? route.stops : [];
+      const stops = (rawStops as Array<{
         name: string;
         address?: string;
         lat: number;

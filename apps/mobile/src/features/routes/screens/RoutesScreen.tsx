@@ -10,19 +10,27 @@
 //   4. Vehículo asignado pero sin ruta activa — pantalla de espera de ruta
 //   5. Ruta activa → card de ruta + botón "Iniciar navegación"
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl, ScrollView,
 } from 'react-native';
+import MapView, { Polyline, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import type { LatLng } from 'react-native-maps';
 import { useNavigation } from '@react-navigation/native';
+import type { CompositeNavigationProp } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { supabase } from '@lib/supabase';
 import { setStr } from '@lib/mmkv';
 import { MMKV_KEYS, API_URL } from '@lib/constants';
 import type { RootStackParamList } from '@navigation/RootNavigator';
+import type { MainTabParamList } from '@navigation/MainTabNavigator';
 
-type NavProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
+type NavProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Routes'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 
 interface DriverAssignment {
   driver: { id: string; full_name: string; role: string };
@@ -100,8 +108,24 @@ function ActiveRouteCard({
   assignment: DriverAssignment;
   onStart: () => void;
 }) {
+  const mapRef = React.useRef<MapView>(null);
   const { vehicle, activeRoute } = assignment;
   if (!vehicle || !activeRoute) return null;
+
+  const waypoints: LatLng[] = activeRoute.waypoints.map((p) => ({
+    latitude: p.lat,
+    longitude: p.lng,
+  }));
+
+  const handlePreviewReady = () => {
+    if (!mapRef.current || waypoints.length < 2) return;
+    setTimeout(() => {
+      mapRef.current?.fitToCoordinates(waypoints, {
+        edgePadding: { top: 24, right: 24, bottom: 24, left: 24 },
+        animated: false,
+      });
+    }, 200);
+  };
 
   return (
     <View style={styles.activeCard}>
@@ -116,6 +140,29 @@ function ActiveRouteCard({
           <Text style={styles.badgeText}>EN SERVICIO</Text>
         </View>
       </View>
+
+      {/* Mini mapa previsualización */}
+      {waypoints.length >= 2 && (
+        <View style={styles.mapPreviewWrapper}>
+          <MapView
+            ref={mapRef}
+            style={styles.mapPreview}
+            provider={PROVIDER_GOOGLE}
+            scrollEnabled={false}
+            zoomEnabled={false}
+            rotateEnabled={false}
+            pitchEnabled={false}
+            onMapReady={handlePreviewReady}
+            customMapStyle={darkMapStyle}
+          >
+            <Polyline coordinates={waypoints} strokeColor="#6C63FF" strokeWidth={3} />
+            <Marker coordinate={waypoints[0]!} pinColor="#22C55E" />
+            <Marker coordinate={waypoints[waypoints.length - 1]!} pinColor="#EF4444" />
+          </MapView>
+          {/* Overlay de gradiente inferior */}
+          <View style={styles.mapPreviewGradient} />
+        </View>
+      )}
 
       {/* Separador */}
       <View style={styles.divider} />
@@ -167,7 +214,7 @@ function ActiveRouteCard({
       <TouchableOpacity
         style={styles.startBtn}
         onPress={onStart}
-        accessibilityLabel="Iniciar navegación de la ruta"
+        accessibilityLabel="Iniciar tracking en tab Mapa"
         accessibilityRole="button"
       >
         <Text style={styles.startBtnText}>▶  Iniciar navegación</Text>
@@ -218,14 +265,66 @@ export function RoutesScreen() {
     }
   }, []);
 
+  // Carga inicial
   useEffect(() => { void fetchAssignment(); }, [fetchAssignment]);
+
+  // Obtener el userId una sola vez al montar
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  useEffect(() => {
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      setCurrentUserId(session?.user.id ?? null);
+    });
+  }, []);
+
+  // Suscripción Realtime — se configura solo cuando ya tenemos el userId
+  // Al separarlo del fetch async evitamos el error "cannot add callbacks after subscribe"
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const channel = supabase
+      .channel(`driver-assignment-${currentUserId}`)
+      // Vehículo asignado como conductor principal
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'vehicles',
+          filter: `assigned_driver_id=eq.${currentUserId}`,
+        },
+        () => { void fetchAssignment(); },
+      )
+      // Nueva asignación en vehicle_user_assignments
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'vehicle_user_assignments',
+          filter: `user_id=eq.${currentUserId}`,
+        },
+        () => { void fetchAssignment(); },
+      )
+      // Cambio de estado de ruta (se activa/desactiva una ruta del vehículo asignado)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'routes' },
+        () => { void fetchAssignment(); },
+      )
+      .subscribe();
+
+    return () => { void supabase.removeChannel(channel); };
+  }, [currentUserId, fetchAssignment]);
 
   const handleStartRoute = () => {
     if (!data?.activeRoute) return;
-    navigation.navigate('Tracking', {
-      routeId: data.activeRoute.id,
-      routeName: data.activeRoute.name,
-    });
+    // Persistir contexto en MMKV para que TrackingScreen lo lea desde el tab Mapa
+    setStr(MMKV_KEYS.ACTIVE_ROUTE_ID,       data.activeRoute.id);
+    setStr(MMKV_KEYS.ACTIVE_ROUTE_NAME,     data.activeRoute.name);
+    setStr(MMKV_KEYS.ACTIVE_ROUTE_WAYPOINTS, JSON.stringify(data.activeRoute.waypoints));
+    setStr(MMKV_KEYS.ACTIVE_ROUTE_STOPS,    JSON.stringify(data.activeRoute.stops));
+    // Ir al tab Mapa (TrackingScreen)
+    navigation.navigate('Map');
   };
 
   if (loading) {
@@ -343,6 +442,26 @@ const styles = StyleSheet.create({
   },
   startBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 
+  // Mini mapa previsualización
+  mapPreviewWrapper: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    height: 180,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#6C63FF33',
+  },
+  mapPreview: { flex: 1 },
+  mapPreviewGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 40,
+    backgroundColor: 'transparent',
+    // Simula un gradiente sutil en la parte inferior del mini mapa
+  },
+
   // Utilitarios
   loadingText: { color: '#8888AA', marginTop: 12, fontSize: 14 },
   errorIcon: { fontSize: 40 },
@@ -353,3 +472,15 @@ const styles = StyleSheet.create({
   },
   retryText: { color: '#fff', fontWeight: '600' },
 });
+
+const darkMapStyle = [
+  { elementType: 'geometry',           stylers: [{ color: '#0A0A0F' }] },
+  { elementType: 'labels.text.fill',   stylers: [{ color: '#8888AA' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#0A0A0F' }] },
+  { featureType: 'road',               elementType: 'geometry', stylers: [{ color: '#1C1C2E' }] },
+  { featureType: 'road.arterial',      elementType: 'geometry', stylers: [{ color: '#2A2A3F' }] },
+  { featureType: 'road.highway',       elementType: 'geometry', stylers: [{ color: '#3A3A5C' }] },
+  { featureType: 'water',              elementType: 'geometry', stylers: [{ color: '#060610' }] },
+  { featureType: 'poi',                stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit',            stylers: [{ visibility: 'off' }] },
+];

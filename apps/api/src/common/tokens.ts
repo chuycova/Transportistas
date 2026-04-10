@@ -11,3 +11,4 @@ export const LOCATION_REPOSITORY = Symbol('ILocationRepository');
 export const ALERT_REPOSITORY = Symbol('IAlertRepository');
 export const NOTIFICATION_SERVICE = Symbol('INotificationService');
 export const TENANT_REPOSITORY = Symbol('ITenantRepository');
+export const GEOFENCE_REPOSITORY = Symbol('IGeofenceRepository');

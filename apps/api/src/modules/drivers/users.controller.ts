@@ -43,7 +43,7 @@ export class UsersController {
 
   /**
    * GET /api/v1/users
-   * Lista todos los perfiles del tenant, sin filtrar por rol.
+   * Lista todos los perfiles del tenant con email incluido.
    */
   @Get()
   @Roles('admin', 'super_admin', 'operator')
@@ -55,9 +55,20 @@ export class UsersController {
       .order('full_name');
 
     if (error) throw new Error(error.message);
+    const profiles = data ?? [];
 
-    return (data ?? []).map((p) => ({
+    // Obtener emails desde auth.users (batch)
+    const emailMap = new Map<string, string>();
+    for (const p of profiles) {
+      try {
+        const { data: authUser } = await this.adminClient.auth.admin.getUserById(p.id);
+        if (authUser?.user?.email) emailMap.set(p.id, authUser.user.email);
+      } catch { /* ignorar error individual */ }
+    }
+
+    return profiles.map((p) => ({
       id: p.id,
+      email: emailMap.get(p.id) ?? null,
       full_name: p.full_name,
       phone: p.phone,
       role: p.role,
@@ -65,6 +76,36 @@ export class UsersController {
       avatar_url: p.avatar_url,
       has_device: !!p.fcm_token,
     }));
+  }
+
+  /**
+   * GET /api/v1/users/:id
+   * Devuelve el perfil completo de un usuario del tenant.
+   */
+  @Get(':id')
+  @Roles('admin', 'super_admin', 'operator')
+  async findOne(@Param('id') id: string, @TenantId() tenantId: string) {
+    const { data: profile, error } = await this.adminClient
+      .from('profiles')
+      .select('id, full_name, phone, role, is_active, avatar_url, fcm_token')
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .single();
+
+    if (error || !profile) throw new Error('Usuario no encontrado');
+
+    const { data: authUser } = await this.adminClient.auth.admin.getUserById(id);
+
+    return {
+      id: profile.id,
+      email: authUser?.user?.email ?? null,
+      full_name: profile.full_name,
+      phone: profile.phone,
+      role: profile.role,
+      is_active: profile.is_active,
+      avatar_url: profile.avatar_url,
+      has_device: !!profile.fcm_token,
+    };
   }
 
   /**

@@ -6,7 +6,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { RoutesScreen } from '@features/routes/screens/RoutesScreen';
-import { MapScreen } from '@features/map/screens/MapScreen';
+import { TrackingScreen } from '@features/tracking/screens/TrackingScreen';
 import { HistoryScreen } from '@features/history/screens/HistoryScreen';
 import { SettingsScreen } from '@features/settings/screens/SettingsScreen';
 
@@ -68,8 +68,8 @@ export function MainTabNavigator() {
       />
       <Tab.Screen
         name="Map"
-        component={MapScreen}
-        options={{ title: 'Mapa' }}
+        component={TrackingScreen}
+        options={{ title: 'Mapa', headerShown: false }}
       />
       <Tab.Screen
         name="History"

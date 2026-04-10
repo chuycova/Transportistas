@@ -7,7 +7,10 @@ export type AlertType =
   | 'arrived_stop'
   | 'route_completed'
   | 'signal_lost'
-  | 'signal_recovered';
+  | 'signal_recovered'
+  | 'emergency'
+  | 'geofence_entry'
+  | 'geofence_exit';
 
 export type AlertSeverity = 'info' | 'warning' | 'critical';
 

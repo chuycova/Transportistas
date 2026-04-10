@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { VehiclesModule } from '../vehicles/vehicles.module';
 import { RoutingModule } from '../routing/routing.module';
 import { AlertsModule } from '../alerts/alerts.module';
+import { GeofencesModule } from '../geofences/geofences.module';
 import { TrackingController } from './tracking.controller';
 import { TrackingGateway } from './infrastructure/tracking.gateway';
 import { ProcessLocationUseCase } from './application/process-location.use-case';
@@ -17,6 +18,7 @@ import { LOCATION_REPOSITORY } from '../../common/tokens';
     VehiclesModule,    // Para IVehicleRepository (actualizar status)
     RoutingModule,     // Para IRouteRepository (obtener polyline para detección)
     AlertsModule,      // Para IAlertRepository + INotificationService
+    GeofencesModule,   // Para IGeofenceRepository (detección de geocercas)
   ],
   controllers: [TrackingController],
   providers: [

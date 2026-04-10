@@ -16,6 +16,7 @@ import {
   ALERT_REPOSITORY,
   VEHICLE_REPOSITORY,
   NOTIFICATION_SERVICE,
+  GEOFENCE_REPOSITORY,
 } from '../../../common/tokens';
 import type {
   ILocationRepository,
@@ -24,6 +25,7 @@ import type {
   IVehicleRepository,
   INotificationService,
 } from '@zona-zero/domain';
+import type { IGeofenceRepository, Geofence } from '../../geofences/geofence.types';
 import { TrackingGateway } from '../infrastructure/tracking.gateway';
 import { getServerSupabaseClient } from '@zona-zero/infrastructure';
 import { PingBatchBufferService, type FlushedPing } from './ping-batch-buffer.service';
@@ -44,12 +46,18 @@ export interface IncomingPingDto {
 export class ProcessLocationUseCase implements OnModuleInit {
   private readonly logger = new Logger(ProcessLocationUseCase.name);
 
+  /** Cache de geocercas activas por tenant (TTL 60s) */
+  private readonly geofenceCache = new Map<string, { list: Geofence[]; expiry: number }>();
+  /** Estado de geocerca por vehículo: vehicleId → Set de geofenceIds actualmente dentro */
+  private readonly vehicleGeofenceState = new Map<string, Set<string>>();
+
   constructor(
     @Inject(LOCATION_REPOSITORY) private readonly locationRepo: ILocationRepository,
     @Inject(ROUTE_REPOSITORY) private readonly routeRepo: IRouteRepository,
     @Inject(ALERT_REPOSITORY) private readonly alertRepo: IAlertRepository,
     @Inject(VEHICLE_REPOSITORY) private readonly vehicleRepo: IVehicleRepository,
     @Inject(NOTIFICATION_SERVICE) private readonly notificationSvc: INotificationService,
+    @Inject(GEOFENCE_REPOSITORY) private readonly geofenceRepo: IGeofenceRepository,
     private readonly gateway: TrackingGateway,
     private readonly batchBuffer: PingBatchBufferService,
   ) {}
@@ -59,6 +67,31 @@ export class ProcessLocationUseCase implements OnModuleInit {
     this.batchBuffer.setFlushCallback((pings) => this.processBatch(pings));
     // Conectar el handler de pings de socket con este use case
     this.gateway.setProcessPingCallback((ping) => this.execute(ping));
+    // Conectar el handler de pánico vía socket
+    this.gateway.setPanicCallback((p) => this.handlePanic(p));
+  }
+
+  /** Maneja una alerta de pánico (llamado desde socket o REST controller) */
+  async handlePanic(payload: {
+    vehicleId: string;
+    tenantId: string;
+    coordinate?: { lat: number; lng: number };
+  }): Promise<void> {
+    await this.alertRepo.create({
+      tenantId: payload.tenantId,
+      vehicleId: payload.vehicleId,
+      alertType: 'emergency',
+      severity: 'critical',
+      payload: {
+        source: 'panic_button',
+        lat: payload.coordinate?.lat,
+        lng: payload.coordinate?.lng,
+        triggered_at: new Date().toISOString(),
+      },
+    });
+    await this.vehicleRepo.updateStatus(payload.vehicleId, payload.tenantId, 'off_route');
+    this.gateway.emitEmergencyAlert(payload.tenantId, payload.vehicleId, payload.coordinate);
+    this.logger.warn(`PÁNICO procesado: vehicleId=${payload.vehicleId} tenant=${payload.tenantId}`);
   }
 
   /**
@@ -66,6 +99,10 @@ export class ProcessLocationUseCase implements OnModuleInit {
    * Retorna inmediatamente (<1ms) para no bloquear al dispositivo.
    */
   execute(ping: IncomingPingDto): void {
+    if (!ping.vehicleId || !ping.tenantId) {
+      this.logger.warn(`Ping ignorado: vehicleId="${ping.vehicleId}" tenantId="${ping.tenantId}" vacíos`);
+      return;
+    }
     this.batchBuffer.addPing({
       vehicleId: ping.vehicleId,
       tenantId: ping.tenantId,
@@ -87,6 +124,10 @@ export class ProcessLocationUseCase implements OnModuleInit {
   }
 
   private async processSingle(ping: FlushedPing): Promise<void> {
+    if (!ping.vehicleId || !ping.tenantId) {
+      this.logger.warn('processSingle: vehicleId o tenantId vacío, ping descartado');
+      return;
+    }
     const t0 = Date.now();
 
     // Usar coordenadas snapeadas (calles reales) para todo el procesamiento
@@ -155,7 +196,10 @@ export class ProcessLocationUseCase implements OnModuleInit {
       await this.locationRepo.create(locationInput);
     }
 
-    // 4. Emitir WebSocket al dashboard (SIEMPRE, independiente de si se persiste)
+    // 4. Comprobar geocercas (entrada/salida)
+    await this.checkGeofences(ping.tenantId, ping.vehicleId, snappedCoord);
+
+    // 5. Emitir WebSocket al dashboard (SIEMPRE, independiente de si se persiste)
     //    El mapa en vivo necesita actualizaciones frecuentes aunque no guardemos todo
     const wsPayload: LocationWebSocketPayload = {
       v: ping.vehicleId,
@@ -177,6 +221,69 @@ export class ProcessLocationUseCase implements OnModuleInit {
     );
   }
 
+  // ─── Geocercas ───────────────────────────────────────────────────────────────
+
+  private async getActiveGeofences(tenantId: string): Promise<Geofence[]> {
+    const cached = this.geofenceCache.get(tenantId);
+    if (cached && Date.now() < cached.expiry) return cached.list;
+    const list = await this.geofenceRepo.findActiveByTenant(tenantId);
+    this.geofenceCache.set(tenantId, { list, expiry: Date.now() + 60_000 });
+    return list;
+  }
+
+  private async checkGeofences(
+    tenantId: string,
+    vehicleId: string,
+    coord: Coordinate,
+  ): Promise<void> {
+    try {
+      const geofences = await this.getActiveGeofences(tenantId);
+      if (!geofences.length) return;
+
+      const prevInside = this.vehicleGeofenceState.get(vehicleId) ?? new Set<string>();
+      const nowInside = new Set<string>();
+
+      for (const gf of geofences) {
+        if (pointInPolygon(coord, gf.polygonCoords)) {
+          nowInside.add(gf.id);
+        }
+      }
+
+      for (const gf of geofences) {
+        const wasIn = prevInside.has(gf.id);
+        const isIn  = nowInside.has(gf.id);
+
+        if (isIn && !wasIn && gf.alertOnEnter) {
+          await this.alertRepo.create({
+            tenantId,
+            vehicleId,
+            alertType: 'geofence_entry',
+            severity: 'info',
+            payload: { geofence_id: gf.id, geofence_name: gf.name, geofence_type: gf.type },
+          });
+          this.gateway.emitGeofenceAlert(tenantId, vehicleId, 'geofence_entry', gf.name);
+          this.logger.log(`Vehículo ${vehicleId} ENTRÓ a geocerca "${gf.name}"`);
+        } else if (!isIn && wasIn && gf.alertOnExit) {
+          await this.alertRepo.create({
+            tenantId,
+            vehicleId,
+            alertType: 'geofence_exit',
+            severity: 'info',
+            payload: { geofence_id: gf.id, geofence_name: gf.name, geofence_type: gf.type },
+          });
+          this.gateway.emitGeofenceAlert(tenantId, vehicleId, 'geofence_exit', gf.name);
+          this.logger.log(`Vehículo ${vehicleId} SALIÓ de geocerca "${gf.name}"`);
+        }
+      }
+
+      this.vehicleGeofenceState.set(vehicleId, nowInside);
+    } catch (err) {
+      this.logger.error(`Error al comprobar geocercas: ${(err as Error).message}`);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+
   private async getTenantThreshold(tenantId: string): Promise<number> {
     const { data } = await getServerSupabaseClient()
       .from('tenants')
@@ -195,4 +302,18 @@ export class ProcessLocationUseCase implements OnModuleInit {
       .single();
     return (data ? data['fcm_token'] : null) as string | undefined;
   }
+}
+
+// ─── Ray-casting point-in-polygon (WGS-84, polígonos simples) ────────────────
+function pointInPolygon(coord: Coordinate, polygon: [number, number][]): boolean {
+  const x = coord.lng;
+  const y = coord.lat;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    const intersect = ((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
 }

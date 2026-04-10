@@ -100,6 +100,21 @@ export function onDeviationAlert(handler: (alert: DeviationAlertPayload) => void
   return () => _socket?.off('deviation:alert', handler);
 }
 
+export interface PanicAlertPayload {
+  vehicleId: string;
+  coordinate?: { lat: number; lng: number };
+}
+
+/**
+ * Emite una alerta de pánico al backend vía socket.
+ * El backend la persiste como alerta crítica y la emite al dashboard.
+ */
+export function emitPanicAlert(payload: PanicAlertPayload): boolean {
+  if (!_socket?.connected) return false;
+  _socket.emit('panic:alert', payload);
+  return true;
+}
+
 /** Desconecta el socket (cuando el conductor para el tracking) */
 export function disconnectSocket(): void {
   _socket?.disconnect();

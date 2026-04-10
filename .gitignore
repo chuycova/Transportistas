@@ -76,3 +76,12 @@ coverage/
 # Los .js y .js.map son generados, no se versionan
 packages/*/src/**/*.js
 packages/*/src/**/*.js.map
+
+# AI tooling — configs locales de agentes, no son parte del proyecto
+.claude/
+.windsurf/
+.agents/skills/
+
+# Documentos de trabajo internos
+errors.md
+VEHICLE_MONITORING_ROADMAP.md

@@ -30,6 +30,7 @@ export interface GpsTrackingOptions {
 export interface GpsTrackingState {
   isTracking: boolean;
   lastCoordinate: { lat: number; lng: number } | null;
+  heading: number | null;
   permissionStatus: Location.PermissionStatus | null;
   error: string | null;
 }
@@ -38,6 +39,7 @@ export function useGpsTracking(options: GpsTrackingOptions) {
   const [state, setState] = useState<GpsTrackingState>({
     isTracking: false,
     lastCoordinate: null,
+    heading: null,
     permissionStatus: null,
     error: null,
   });
@@ -59,7 +61,7 @@ export function useGpsTracking(options: GpsTrackingOptions) {
     const { latitude: lat, longitude: lng, speed, heading, accuracy } = location.coords;
     const { vehicleId, tenantId, routeId } = optionsRef.current;
 
-    setState((prev) => ({ ...prev, lastCoordinate: { lat, lng } }));
+    setState((prev) => ({ ...prev, lastCoordinate: { lat, lng }, heading: heading ?? prev.heading }));
 
     const payload = {
       vehicleId,
