@@ -4,12 +4,13 @@
 // Queries directas a Supabase (browser client) — RLS asegura que solo se ven
 // datos del tenant del usuario autenticado.
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 const db = () => createSupabaseBrowserClient();
 
-// ─── Tipo de alerta ───────────────────────────────────────────────────────────
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
 export interface VehicleAlert {
   id: string;
   alert_type: string;
@@ -22,7 +23,6 @@ export interface VehicleAlert {
   route_id: string | null;
 }
 
-// ─── Tipo de ruta completada/historial ───────────────────────────────────────
 export interface VehicleRouteRecord {
   id: string;
   name: string;
@@ -36,7 +36,6 @@ export interface VehicleRouteRecord {
   deviation_threshold_m: number | null;
 }
 
-// ─── Punto de tracking reciente ───────────────────────────────────────────────
 export interface TrackingPoint {
   id: number;
   recorded_at: string;
@@ -46,6 +45,26 @@ export interface TrackingPoint {
   deviation_m: number | null;
   lat: number;
   lng: number;
+}
+
+export interface AssignedUserProfile {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  role: string;
+  avatar_url: string | null;
+  is_active: boolean;
+}
+
+export interface AssignedUserRecord {
+  id: string;
+  user_id: string;
+  assigned_at: string;
+  unassigned_at: string | null;
+  is_active: boolean;
+  notes: string | null;
+  assigned_by: string | null;
+  profile: AssignedUserProfile | null;
 }
 
 // ─── 1. Rutas históricas del vehículo ────────────────────────────────────────
@@ -87,7 +106,6 @@ export function useVehicleAlerts(vehicleId: string) {
 }
 
 // ─── 3. Track reciente del vehículo (últimas 200 posiciones) ─────────────────
-// Usado para la línea de tiempo actual y el mini-mapa de ruta en progreso.
 export function useVehicleTrack(vehicleId: string) {
   return useQuery<TrackingPoint[]>({
     queryKey: ['vehicle-track', vehicleId],
@@ -102,13 +120,11 @@ export function useVehicleTrack(vehicleId: string) {
         .limit(200);
       if (error) throw new Error(error.message);
 
-      // point es un GeoJSON geography point — extraer lat/lng
       return (data ?? []).map((row) => {
-        // Supabase devuelve geography como GeoJSON string o objeto
         const pt = row.point as unknown as { coordinates?: [number, number] } | string | null;
         let lat = 0, lng = 0;
         if (pt && typeof pt === 'object' && 'coordinates' in pt && pt.coordinates) {
-          [lng, lat] = pt.coordinates; // GeoJSON es [lng, lat]
+          [lng, lat] = pt.coordinates;
         }
         return {
           id: row.id as number,
@@ -124,6 +140,159 @@ export function useVehicleTrack(vehicleId: string) {
     },
     enabled: !!vehicleId,
     staleTime: 10_000,
-    refetchInterval: 15_000, // refrescar cada 15s para ver posición actual
+    refetchInterval: 15_000,
+  });
+}
+
+// ─── 4. Usuarios asignados al vehículo (activos + historial) ─────────────────
+export function useVehicleAssignedUsers(vehicleId: string) {
+  return useQuery<AssignedUserRecord[]>({
+    queryKey: ['vehicle-users', vehicleId],
+    queryFn: async () => {
+      const client = db();
+
+      const { data: assignments, error: aErr } = await client
+        .from('vehicle_user_assignments')
+        .select('id, user_id, assigned_at, unassigned_at, is_active, notes, assigned_by')
+        .eq('vehicle_id', vehicleId)
+        .order('assigned_at', { ascending: false });
+      if (aErr) throw new Error(aErr.message);
+      if (!assignments || assignments.length === 0) return [];
+
+      const userIds = [...new Set(assignments.map((a) => a.user_id))];
+      const { data: profiles, error: pErr } = await client
+        .from('profiles')
+        .select('id, full_name, phone, role, avatar_url, is_active')
+        .in('id', userIds);
+      if (pErr) throw new Error(pErr.message);
+
+      const profileMap = new Map((profiles ?? []).map((p) => [p.id, p as AssignedUserProfile]));
+
+      return assignments.map((a) => ({
+        ...a,
+        profile: profileMap.get(a.user_id) ?? null,
+      }));
+    },
+    enabled: !!vehicleId,
+    staleTime: 30_000,
+  });
+}
+
+// ─── 5. Solo los IDs activos (para inicializar el form de edición) ────────────
+export function useVehicleAssignedUserIds(vehicleId: string | undefined) {
+  return useQuery<string[]>({
+    queryKey: ['vehicle-user-ids', vehicleId],
+    queryFn: async () => {
+      const { data, error } = await db()
+        .from('vehicle_user_assignments')
+        .select('user_id')
+        .eq('vehicle_id', vehicleId!)
+        .eq('is_active', true);
+      if (error) throw new Error(error.message);
+      return (data ?? []).map((r) => r.user_id);
+    },
+    enabled: !!vehicleId,
+    staleTime: 30_000,
+  });
+}
+
+// ─── 6. Sincronizar asignaciones (diff + apply) ───────────────────────────────
+// Usado al guardar el form: compara selección actual con BD y aplica el diff.
+export function useSyncVehicleUsers() {
+  const qc = useQueryClient();
+  const supabase = createSupabaseBrowserClient();
+
+  return useMutation({
+    mutationFn: async ({
+      vehicleId,
+      userIds,
+      tenantId,
+      assignedBy,
+    }: {
+      vehicleId: string;
+      userIds: string[];
+      tenantId: string;
+      assignedBy: string;
+    }) => {
+      const { data: current, error: fetchErr } = await supabase
+        .from('vehicle_user_assignments')
+        .select('id, user_id')
+        .eq('vehicle_id', vehicleId)
+        .eq('is_active', true);
+      if (fetchErr) throw new Error(fetchErr.message);
+
+      const currentAssignments = current ?? [];
+      const currentIds = currentAssignments.map((a) => a.user_id);
+
+      const toAdd = userIds.filter((id) => !currentIds.includes(id));
+      const toRemove = currentAssignments.filter((a) => !userIds.includes(a.user_id));
+
+      if (toAdd.length > 0) {
+        const { error } = await supabase.from('vehicle_user_assignments').insert(
+          toAdd.map((userId) => ({
+            vehicle_id: vehicleId,
+            user_id: userId,
+            tenant_id: tenantId,
+            assigned_by: assignedBy,
+          })),
+        );
+        if (error) throw new Error(error.message);
+      }
+
+      for (const a of toRemove) {
+        const { error } = await supabase
+          .from('vehicle_user_assignments')
+          .update({ is_active: false, unassigned_at: new Date().toISOString() })
+          .eq('id', a.id);
+        if (error) throw new Error(error.message);
+      }
+    },
+    onSuccess: (_, { vehicleId }) => {
+      void qc.invalidateQueries({ queryKey: ['vehicle-users', vehicleId] });
+      void qc.invalidateQueries({ queryKey: ['vehicle-user-ids', vehicleId] });
+    },
+  });
+}
+
+// ─── 7. Añadir usuario individual (desde el detalle del vehículo) ─────────────
+export function useAddVehicleUser() {
+  const qc = useQueryClient();
+  const supabase = createSupabaseBrowserClient();
+
+  return useMutation({
+    mutationFn: async ({ vehicleId, userId }: { vehicleId: string; userId: string }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      const tenantId = user?.user_metadata?.tenant_id as string;
+
+      const { error } = await supabase.from('vehicle_user_assignments').insert({
+        vehicle_id: vehicleId,
+        user_id: userId,
+        tenant_id: tenantId,
+        assigned_by: user?.id,
+      });
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: (_, { vehicleId }) => {
+      void qc.invalidateQueries({ queryKey: ['vehicle-users', vehicleId] });
+    },
+  });
+}
+
+// ─── 8. Desasignar usuario (soft-delete, queda en historial) ──────────────────
+export function useRemoveVehicleUser() {
+  const qc = useQueryClient();
+  const supabase = createSupabaseBrowserClient();
+
+  return useMutation({
+    mutationFn: async (vars: { assignmentId: string; vehicleId: string }) => {
+      const { error } = await supabase
+        .from('vehicle_user_assignments')
+        .update({ is_active: false, unassigned_at: new Date().toISOString() })
+        .eq('id', vars.assignmentId);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: (_, { vehicleId }) => {
+      void qc.invalidateQueries({ queryKey: ['vehicle-users', vehicleId] });
+    },
   });
 }

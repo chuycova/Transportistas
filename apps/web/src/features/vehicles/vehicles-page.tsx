@@ -1,10 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Truck, Car, X, Pencil, Trash2, ChevronDown,
   Smartphone, UserPlus, UserCheck, RefreshCw, Mail, Eye,
+  Users, Check,
 } from 'lucide-react';
 import {
   useVehicles,
@@ -14,7 +15,10 @@ import {
   type Vehicle,
 } from './use-vehicles';
 import { useTrackingStore } from '../../stores/use-tracking-store';
-import { useDrivers, useInviteDriver, type Driver } from '../drivers/use-drivers';
+import { useInviteDriver } from '../drivers/use-drivers';
+import { useUsers } from '../users/use-users';
+import { useVehicleAssignedUserIds, useSyncVehicleUsers } from './use-vehicle-detail';
+import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
@@ -26,6 +30,20 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
 
 const VEHICLE_TYPES = ['truck', 'car', 'van', 'motorcycle', 'other'] as const;
 const STATUSES = ['active', 'inactive', 'maintenance'] as const;
+
+const ROLE_LABELS: Record<string, string> = {
+  driver:      'Conductor',
+  operator:    'Operador',
+  admin:       'Admin',
+  super_admin: 'Super Admin',
+};
+
+const ROLE_COLORS: Record<string, string> = {
+  driver:      'bg-indigo-500/10 text-indigo-400 border-indigo-500/30',
+  operator:    'bg-sky-500/10 text-sky-400 border-sky-500/30',
+  admin:       'bg-amber-500/10 text-amber-400 border-amber-500/30',
+  super_admin: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
+};
 
 function VehicleIcon({ type }: { type: string }) {
   if (type === 'car' || type === 'van') return <Car className="h-5 w-5" />;
@@ -41,41 +59,54 @@ interface VehicleFormData {
   vehicle_type: typeof VEHICLE_TYPES[number];
   color: string;
   status: typeof STATUSES[number];
-  assigned_driver_id: string; // '' = sin asignar
+  assigned_driver_id: string;  // conductor principal (acceso móvil)
+  assigned_user_ids: string[]; // todos los usuarios asignados
 }
 
 const EMPTY_FORM: VehicleFormData = {
   plate: '', alias: '', brand: '', model: '',
   year: '', vehicle_type: 'truck', color: '#6366f1', status: 'inactive',
   assigned_driver_id: '',
+  assigned_user_ids: [],
 };
 
-// ─── Driver picker + invite inline ───────────────────────────────────────────
-function DriverSection({
-  value,
-  onChange,
+// ─── Sección de usuarios asignados (multi-select) ─────────────────────────────
+function AssignedUsersSection({
+  selectedIds,
+  primaryDriverId,
+  onToggleUser,
+  onSetPrimaryDriver,
 }: {
-  value: string;
-  onChange: (id: string) => void;
+  selectedIds: string[];
+  primaryDriverId: string;
+  onToggleUser: (id: string) => void;
+  onSetPrimaryDriver: (id: string) => void;
 }) {
-  const { data: drivers = [], isLoading, refetch } = useDrivers();
+  const { data: users = [], isLoading, refetch } = useUsers();
   const invite = useInviteDriver();
-
   const [showInvite, setShowInvite] = useState(false);
   const [invEmail, setInvEmail] = useState('');
   const [invName, setInvName]   = useState('');
   const [invPhone, setInvPhone] = useState('');
   const [invOk, setInvOk]       = useState(false);
+  const [search, setSearch]     = useState('');
 
-  const selected = drivers.find((d) => d.id === value);
+  const filtered = users.filter((u) =>
+    !search ||
+    u.full_name.toLowerCase().includes(search.toLowerCase()) ||
+    (u.phone ?? '').includes(search),
+  );
 
-  const handleInvite = async (e: React.FormEvent) => {
+  const selectedUsers = users.filter((u) => selectedIds.includes(u.id));
+  const selectedDrivers = selectedUsers.filter((u) => u.role === 'driver');
+  const showPrimaryToggle = selectedDrivers.length > 1;
+
+  const handleInvite = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     await invite.mutateAsync({ email: invEmail, full_name: invName, phone: invPhone || undefined });
     setInvOk(true);
     setShowInvite(false);
     setInvEmail(''); setInvName(''); setInvPhone('');
-    // refetch para que aparezca en la lista
     void refetch();
     setTimeout(() => setInvOk(false), 4000);
   };
@@ -84,57 +115,140 @@ function DriverSection({
     <div className="col-span-2 space-y-2 rounded-xl border border-border/40 bg-background/30 p-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-          <Smartphone className="h-3.5 w-3.5" />
-          Conductor / Dispositivo móvil
+          <Users className="h-3.5 w-3.5" />
+          Usuarios asignados
+          {selectedIds.length > 0 && (
+            <span className="ml-1 rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+              {selectedIds.length}
+            </span>
+          )}
         </p>
         <button
           type="button"
           onClick={() => void refetch()}
           className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors"
-          title="Recargar conductores"
+          title="Recargar usuarios"
         >
           <RefreshCw className="h-3 w-3" />
         </button>
       </div>
 
-      {/* Lista de conductores */}
+      {/* Búsqueda */}
+      {users.length > 5 && (
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar usuario..."
+          className="w-full rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs focus:border-primary/50 focus:outline-none"
+        />
+      )}
+
+      {/* Lista de usuarios */}
       {isLoading ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
           <div className="h-3 w-3 animate-spin rounded-full border border-border border-t-primary" />
-          Cargando conductores...
+          Cargando usuarios...
         </div>
-      ) : drivers.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <p className="text-xs text-muted-foreground/60 italic py-1">
-          No hay conductores registrados en este tenant.
+          {search ? 'Sin resultados' : 'No hay usuarios en este tenant.'}
         </p>
       ) : (
-        <div className="space-y-1 max-h-40 overflow-y-auto pr-0.5">
-          {/* Opción sin asignar */}
-          <button
-            type="button"
-            onClick={() => onChange('')}
-            className={`w-full flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors text-left ${
-              value === ''
-                ? 'bg-primary/10 border border-primary/30 text-primary'
-                : 'border border-transparent hover:bg-muted/40 text-muted-foreground'
-            }`}
-          >
-            <span className="h-2 w-2 rounded-full bg-muted-foreground/40 flex-shrink-0" />
-            Sin asignar
-          </button>
+        <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+          {filtered.map((u) => {
+            const isSelected = selectedIds.includes(u.id);
+            const isPrimary = u.id === primaryDriverId;
+            const isDriver = u.role === 'driver';
 
-          {drivers.map((d) => (
-            <DriverCard
-              key={d.id}
-              driver={d}
-              selected={value === d.id}
-              onSelect={() => onChange(d.id)}
-            />
+            return (
+              <div
+                key={u.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onToggleUser(u.id)}
+                onKeyDown={(e) => e.key === 'Enter' && onToggleUser(u.id)}
+                className={`flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors ${
+                  isSelected
+                    ? 'border border-primary/30 bg-primary/10'
+                    : 'border border-transparent hover:bg-muted/40'
+                }`}
+              >
+                {/* Checkbox visual */}
+                <div className={`h-4 w-4 flex-shrink-0 rounded border flex items-center justify-center transition-colors ${
+                  isSelected ? 'border-primary bg-primary' : 'border-border/60 bg-background'
+                }`}>
+                  {isSelected && <Check className="h-2.5 w-2.5 text-white" />}
+                </div>
+
+                {/* Avatar */}
+                <div className={`h-6 w-6 flex-shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                  isSelected ? 'bg-primary/20 text-primary' : 'bg-muted/60 text-muted-foreground'
+                }`}>
+                  {u.full_name.charAt(0).toUpperCase()}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className={`font-semibold truncate ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+                    {u.full_name}
+                    {isPrimary && (
+                      <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold text-emerald-400">
+                        <Smartphone className="h-2 w-2" />
+                        Móvil
+                      </span>
+                    )}
+                  </p>
+                  {u.phone && (
+                    <p className="text-[10px] text-muted-foreground truncate">{u.phone}</p>
+                  )}
+                </div>
+
+                {/* Role badge */}
+                <span className={`flex-shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${
+                  ROLE_COLORS[u.role] ?? 'bg-muted/20 text-muted-foreground border-border'
+                }`}>
+                  {ROLE_LABELS[u.role] ?? u.role}
+                </span>
+
+                {/* Toggle acceso móvil — solo para conductores seleccionados */}
+                {isSelected && isDriver && (showPrimaryToggle || !isPrimary) && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSetPrimaryDriver(isPrimary ? '' : u.id);
+                    }}
+                    className={`ml-0.5 flex-shrink-0 rounded-full p-1 transition-colors ${
+                      isPrimary
+                        ? 'text-emerald-400 hover:text-muted-foreground'
+                        : 'text-muted-foreground hover:text-emerald-400'
+                    }`}
+                    title={isPrimary ? 'Quitar acceso móvil' : 'Asignar acceso móvil'}
+                  >
+                    <Smartphone className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Chips de seleccionados */}
+      {selectedUsers.length > 0 && (
+        <div className="flex flex-wrap gap-1 border-t border-border/30 pt-2">
+          {selectedUsers.map((u) => (
+            <span
+              key={u.id}
+              className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+            >
+              {u.full_name.split(' ')[0]}
+              {u.id === primaryDriverId && <Smartphone className="h-2.5 w-2.5" />}
+            </span>
           ))}
         </div>
       )}
 
-      {/* Invitar nuevo conductor */}
+      {/* Invitación enviada */}
       {invOk && (
         <p className="text-[11px] text-emerald-400 flex items-center gap-1.5">
           <UserCheck className="h-3.5 w-3.5" />
@@ -142,6 +256,7 @@ function DriverSection({
         </p>
       )}
 
+      {/* Invitar nuevo conductor */}
       <button
         type="button"
         onClick={() => setShowInvite((v) => !v)}
@@ -199,77 +314,7 @@ function DriverSection({
           </motion.form>
         )}
       </AnimatePresence>
-
-      {/* Driver ya asignado — info rápida */}
-      {selected && (
-        <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
-          <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary flex-shrink-0">
-            {selected.full_name.charAt(0).toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs font-semibold truncate">{selected.full_name}</p>
-            <p className="text-[10px] text-muted-foreground">{selected.phone ?? 'Sin teléfono'}</p>
-          </div>
-          {selected.has_device ? (
-            <div className="ml-auto flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 rounded-full px-1.5 py-0.5 flex-shrink-0">
-              <Smartphone className="h-2.5 w-2.5" />
-              App activa
-            </div>
-          ) : (
-            <div className="ml-auto flex items-center gap-1 text-[10px] text-amber-400 bg-amber-500/10 rounded-full px-1.5 py-0.5 flex-shrink-0">
-              <Smartphone className="h-2.5 w-2.5" />
-              Sin app
-            </div>
-          )}
-        </div>
-      )}
     </div>
-  );
-}
-
-function DriverCard({
-  driver, selected, onSelect,
-}: {
-  driver: Driver;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`w-full flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors text-left ${
-        selected
-          ? 'bg-primary/10 border border-primary/30'
-          : 'border border-transparent hover:bg-muted/40'
-      }`}
-    >
-      {/* Avatar inicial */}
-      <div className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
-        selected ? 'bg-primary/20 text-primary' : 'bg-muted/60 text-muted-foreground'
-      }`}>
-        {driver.full_name.charAt(0).toUpperCase()}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <p className={`font-semibold truncate ${selected ? 'text-primary' : 'text-foreground'}`}>
-          {driver.full_name}
-        </p>
-        {driver.phone && (
-          <p className="text-[10px] text-muted-foreground truncate">{driver.phone}</p>
-        )}
-      </div>
-
-      {/* Indicador de dispositivo */}
-      <div className={`flex-shrink-0 flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
-        driver.has_device
-          ? 'bg-emerald-500/10 text-emerald-400'
-          : 'bg-muted/30 text-muted-foreground'
-      }`}>
-        <Smartphone className="h-2.5 w-2.5" />
-        {driver.has_device ? 'App' : 'Sin app'}
-      </div>
-    </button>
   );
 }
 
@@ -281,32 +326,83 @@ function VehicleModal({
   onClose: () => void;
   vehicle?: Vehicle | null;
 }) {
-  const initialForm: VehicleFormData = vehicle
+  const supabase = createSupabaseBrowserClient();
+
+  const vehicleWithDriver = vehicle as (Vehicle & { assigned_driver_id?: string | null }) | null | undefined;
+
+  const initialForm: VehicleFormData = vehicleWithDriver
     ? {
-        plate: vehicle.plate,
-        alias: vehicle.alias ?? '',
-        brand: vehicle.brand ?? '',
-        model: vehicle.model ?? '',
-        year: vehicle.year?.toString() ?? '',
-        vehicle_type: (vehicle.vehicle_type as typeof VEHICLE_TYPES[number]) ?? 'truck',
-        color: vehicle.color ?? '#6366f1',
-        status: (vehicle.status as typeof STATUSES[number]) ?? 'inactive',
-        assigned_driver_id: (vehicle as Vehicle & { assigned_driver_id?: string }).assigned_driver_id ?? '',
+        plate: vehicleWithDriver.plate,
+        alias: vehicleWithDriver.alias ?? '',
+        brand: vehicleWithDriver.brand ?? '',
+        model: vehicleWithDriver.model ?? '',
+        year: vehicleWithDriver.year?.toString() ?? '',
+        vehicle_type: (vehicleWithDriver.vehicle_type as typeof VEHICLE_TYPES[number]) ?? 'truck',
+        color: vehicleWithDriver.color ?? '#6366f1',
+        status: (vehicleWithDriver.status as typeof STATUSES[number]) ?? 'inactive',
+        assigned_driver_id: vehicleWithDriver.assigned_driver_id ?? '',
+        assigned_user_ids: [],
       }
     : EMPTY_FORM;
 
   const [form, setForm] = useState<VehicleFormData>(initialForm);
 
-  const create = useCreateVehicle();
-  const update = useUpdateVehicle();
-  const isPending = create.isPending || update.isPending;
-  const hasChanges = JSON.stringify(form) !== JSON.stringify(initialForm);
+  const create    = useCreateVehicle();
+  const update    = useUpdateVehicle();
+  const syncUsers = useSyncVehicleUsers();
+
+  const isPending = create.isPending || update.isPending || syncUsers.isPending;
+
+  // Carga asignaciones existentes al editar
+  const { data: existingUserIds = [], isLoading: usersLoading } = useVehicleAssignedUserIds(vehicleWithDriver?.id);
+
+  useEffect(() => {
+    if (!vehicleWithDriver) return;
+    if (usersLoading) return;
+
+    if (existingUserIds.length > 0) {
+      setForm((prev) => ({ ...prev, assigned_user_ids: existingUserIds }));
+    } else if (vehicleWithDriver.assigned_driver_id) {
+      // Compatibilidad hacia atrás: vehículo con driver pero sin registros en la nueva tabla
+      setForm((prev) => ({
+        ...prev,
+        assigned_user_ids: [vehicleWithDriver.assigned_driver_id as string],
+      }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingUserIds, usersLoading, vehicleWithDriver?.id]);
 
   const set = (k: keyof VehicleFormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleToggleUser = (userId: string) => {
+    setForm((prev) => {
+      const isSelected = prev.assigned_user_ids.includes(userId);
+      const newIds = isSelected
+        ? prev.assigned_user_ids.filter((id) => id !== userId)
+        : [...prev.assigned_user_ids, userId];
+
+      // Si se desselecciona al conductor principal, limpiar assigned_driver_id
+      const newDriverId = isSelected && prev.assigned_driver_id === userId
+        ? ''
+        : prev.assigned_driver_id;
+
+      return { ...prev, assigned_user_ids: newIds, assigned_driver_id: newDriverId };
+    });
+  };
+
+  const handleSetPrimaryDriver = (driverId: string) => {
+    setForm((prev) => ({ ...prev, assigned_driver_id: driverId }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Sin sesión activa');
+
+    const tenantId = user.user_metadata?.tenant_id as string;
+
     const payload = {
       plate: form.plate.toUpperCase(),
       alias: form.alias || null,
@@ -318,11 +414,24 @@ function VehicleModal({
       status: form.status,
       assigned_driver_id: form.assigned_driver_id || null,
     };
-    if (vehicle) {
-      await update.mutateAsync({ id: vehicle.id, ...payload });
+
+    let vehicleId: string;
+    if (vehicleWithDriver) {
+      await update.mutateAsync({ id: vehicleWithDriver.id, ...payload });
+      vehicleId = vehicleWithDriver.id;
     } else {
-      await create.mutateAsync(payload);
+      const created = await create.mutateAsync(payload);
+      vehicleId = created.id;
     }
+
+    // Sincronizar asignaciones de usuarios
+    await syncUsers.mutateAsync({
+      vehicleId,
+      userIds: form.assigned_user_ids,
+      tenantId,
+      assignedBy: user.id,
+    });
+
     onClose();
   };
 
@@ -419,16 +528,18 @@ function VehicleModal({
               </div>
             </div>
 
-            {/* ── Conductor / Dispositivo móvil ── */}
-            <DriverSection
-              value={form.assigned_driver_id}
-              onChange={(id) => setForm((p) => ({ ...p, assigned_driver_id: id }))}
+            {/* ── Usuarios asignados ── */}
+            <AssignedUsersSection
+              selectedIds={form.assigned_user_ids}
+              primaryDriverId={form.assigned_driver_id}
+              onToggleUser={handleToggleUser}
+              onSetPrimaryDriver={handleSetPrimaryDriver}
             />
           </div>
 
-          {(create.error || update.error) && (
+          {(create.error || update.error || syncUsers.error) && (
             <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              {(create.error as Error)?.message ?? (update.error as Error)?.message}
+              {(create.error as Error)?.message ?? (update.error as Error)?.message ?? (syncUsers.error as Error)?.message}
             </p>
           )}
 
@@ -437,7 +548,7 @@ function VehicleModal({
               className="flex-1 rounded-lg border border-border py-2 text-sm hover:bg-muted transition-colors">
               Cancelar
             </button>
-            <button type="submit" disabled={isPending || (!!vehicle && !hasChanges)}
+            <button type="submit" disabled={isPending}
               className="flex-1 rounded-lg bg-primary py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60">
               {isPending ? 'Guardando...' : vehicle ? 'Guardar Cambios' : 'Crear Vehículo'}
             </button>
@@ -448,7 +559,7 @@ function VehicleModal({
   );
 }
 
-// ─── Página principal (sin cambios) ──────────────────────────────────────────
+// ─── Página principal ─────────────────────────────────────────────────────────
 export function VehiclesPage() {
   const { data: vehicles = [], isLoading, error } = useVehicles();
   const deleteVehicle = useDeleteVehicle();

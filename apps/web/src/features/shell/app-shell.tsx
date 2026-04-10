@@ -13,7 +13,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Map as MapIcon, Truck, LogOut, Route as RouteIcon, History, Settings, Users } from 'lucide-react';
+import { Map as MapIcon, Truck, LogOut, Route as RouteIcon, History, Settings, Users, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SocketInitialize } from '@/features/dashboard/socket-manager';
 import { LiveMap } from '@/features/dashboard/live-map';
@@ -25,6 +25,7 @@ const NAV_ITEMS = [
   { href: '/users', icon: Users, label: 'Usuarios', exact: false },
   { href: '/routes', icon: RouteIcon, label: 'Rutas', exact: false },
   { href: '/historial', icon: History, label: 'Historial', exact: false },
+  { href: '/geofences', icon: ShieldAlert, label: 'Geocercas', exact: false },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

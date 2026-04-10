@@ -58,6 +58,35 @@ export function useSocketManager() {
       });
     });
 
+    socket.on('alert:emergency', (data: { vehicleId: string; coordinate?: { lat: number; lng: number }; timestamp: string }) => {
+      toast.error('🆘 ALERTA DE EMERGENCIA', {
+        description: `El conductor del vehículo ${data.vehicleId} activó el botón de pánico`,
+        duration: 0, // Persiste hasta que se cierre manualmente
+      });
+      // Sonido de alerta via Web Audio API si está disponible
+      try {
+        const ctx = new AudioContext();
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+        oscillator.type = 'square';
+        oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5);
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 1.5);
+      } catch { /* ignore audio errors */ }
+    });
+
+    socket.on('alert:geofence', (data: { vehicleId: string; eventType: 'geofence_entry' | 'geofence_exit'; geofenceName: string; timestamp: string }) => {
+      const isEntry = data.eventType === 'geofence_entry';
+      toast.info(isEntry ? '📍 Entrada a geocerca' : '📍 Salida de geocerca', {
+        description: `Vehículo ${data.vehicleId} ${isEntry ? 'entró a' : 'salió de'} "${data.geofenceName}"`,
+        duration: 6000,
+      });
+    });
+
     return () => {
       socket?.disconnect();
       socket = null;

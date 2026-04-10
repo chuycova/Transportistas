@@ -6,7 +6,9 @@ import {
   Plus, X, UserCheck, Truck, Car, RefreshCw, Pencil,
   Smartphone, Search, Users, ChevronDown, UserRound,
   Eye, EyeOff, Copy, Check, CheckCircle2, Circle, Wand2,
+  Mail, Phone, ExternalLink,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useUsers, useCreateUser, useUpdateUser, type TenantUser } from './use-users';
 import { useVehicles, useUpdateVehicle, type Vehicle } from '../vehicles/use-vehicles';
 
@@ -619,15 +621,28 @@ function UserCard({
       <div className="flex items-start gap-3">
         <UserAvatar name={driver.full_name} size="md" />
         <div className="flex-1 min-w-0">
-          <p className="font-semibold truncate">{driver.full_name}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="font-semibold truncate">{driver.full_name}</p>
+          </div>
           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
             <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${role.className}`}>
               {role.label}
             </span>
-            {driver.phone && (
-              <p className="text-[11px] text-muted-foreground truncate">{driver.phone}</p>
-            )}
           </div>
+          {/* Email */}
+          {driver.email && (
+            <div className="flex items-center gap-1 mt-1">
+              <Mail className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+              <p className="text-[11px] text-muted-foreground truncate">{driver.email}</p>
+            </div>
+          )}
+          {/* Phone */}
+          {driver.phone && (
+            <div className="flex items-center gap-1 mt-0.5">
+              <Phone className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+              <p className="text-[11px] text-muted-foreground truncate">{driver.phone}</p>
+            </div>
+          )}
         </div>
         {/* Device badge */}
         <div className={`flex-shrink-0 flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${
@@ -663,6 +678,11 @@ function UserCard({
 
       {/* Actions */}
       <div className="mt-3 flex gap-2">
+        <Link href={`/users/${driver.id}`}
+          className="flex items-center justify-center gap-1.5 rounded-xl border border-border/50 px-3 py-2 text-xs font-medium hover:bg-muted/40 transition-colors flex-shrink-0"
+          title="Ver detalle">
+          <ExternalLink className="h-3.5 w-3.5" />
+        </Link>
         <button type="button" onClick={onEdit}
           className="flex items-center justify-center gap-1.5 rounded-xl border border-border/50 px-3 py-2 text-xs font-medium hover:bg-muted/40 transition-colors flex-shrink-0">
           <Pencil className="h-3.5 w-3.5" />
@@ -671,7 +691,7 @@ function UserCard({
         <button type="button" onClick={onAssign}
           className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-border/50 py-2 text-xs font-medium hover:bg-muted/40 hover:border-primary/30 hover:text-primary transition-colors">
           <Truck className="h-3.5 w-3.5" />
-          {assignedVehicle ? 'Cambiar vehículo' : 'Asignar vehículo'}
+          {assignedVehicle ? 'Cambiar' : 'Asignar vehículo'}
         </button>
       </div>
     </motion.div>
@@ -698,7 +718,10 @@ export function UsersPage() {
   }, [vehicles]);
 
   const filtered = useMemo(() => drivers.filter((d) => {
-    const matchSearch = !search || d.full_name.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = !search ||
+      d.full_name.toLowerCase().includes(search.toLowerCase()) ||
+      (d.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (d.phone ?? '').includes(search);
     const hasVehicle  = vehicleByDriver.has(d.id);
     const matchFilter = filterHasVehicle === 'all' ||
       (filterHasVehicle === 'assigned' && hasVehicle) ||
