@@ -23,7 +23,14 @@ const securityHeaders = [
       "default-src 'self'",
       // Next.js inline scripts for hydration require 'unsafe-inline' in dev
       // In production this should be replaced with a nonce-based CSP
-      "script-src 'self' 'unsafe-inline' https://maps.googleapis.com https://maps.gstatic.com",
+      // 'wasm-unsafe-eval' requerido por el renderer vectorial de Google Maps:
+      // compila módulos WebAssembly (shared-label-worker.js, webgl.js) para
+      // renderizar etiquetas de calles, POI, transporte, satélite, etc.
+      // Es más seguro que 'unsafe-eval': solo permite WebAssembly, no JS eval.
+      "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://maps.googleapis.com https://maps.gstatic.com",
+      // worker-src blob: requerido por el renderer WebGL vectorial de Google Maps
+      // (lanza Web Workers desde blob URLs para procesar tiles en paralelo)
+      "worker-src blob:",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       'img-src \'self\' data: blob: https://maps.gstatic.com https://*.googleapis.com',
@@ -33,6 +40,12 @@ const securityHeaders = [
         'wss://*.supabase.co',
         'https://routes.googleapis.com',
         'https://maps.googleapis.com',
+        // mapsresources-pa: style tables del renderer vectorial (tiles + estilos cloud)
+        'https://mapsresources-pa.googleapis.com',
+        // gstatic: assets de tiles, fuentes y recursos estáticos de Google Maps
+        'https://*.gstatic.com',
+        // data: requerido por shared-label-worker: carga texturas de iconos como data URIs
+        'data:',
         'http://localhost:3001',
         'ws://localhost:3001',
       ].join(' '),

@@ -7,12 +7,13 @@ import { routeRepository } from './adapters/supabase-route.adapter';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import type {
   RouteRow,
+  RouteStop,
   CreateRouteInput,
   Coordinate,
 } from './ports/IRouteRepository';
 
-// Re-export types consumed by routes-page.tsx
-export type { RouteRow, CreateRouteInput, Coordinate };
+// Re-export types consumed by routes-page.tsx and route-detail-page.tsx
+export type { RouteRow, RouteStop, CreateRouteInput, Coordinate };
 
 const QUERY_KEY = ['routes'] as const;
 
@@ -23,15 +24,23 @@ export function useRoutes() {
   });
 }
 
+export function useRoute(id: string | undefined) {
+  return useQuery({
+    queryKey: [...QUERY_KEY, id],
+    enabled: !!id,
+    queryFn: () => routeRepository.findById(id!),
+  });
+}
+
 export function useCreateRoute() {
   const qc = useQueryClient();
   const supabase = createSupabaseBrowserClient();
 
   return useMutation({
     mutationFn: async (input: CreateRouteInput) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      const tenantId = user?.user_metadata?.tenant_id as string;
-      return routeRepository.create(input, user?.id ?? '', tenantId);
+      const { data: { session } } = await supabase.auth.getSession();
+      const tenantId = session?.user?.user_metadata?.tenant_id as string;
+      return routeRepository.create(input, session?.user?.id ?? '', tenantId);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
   });
@@ -84,8 +93,9 @@ export function useAssignDriverToRoute() {
       if (!res.ok) throw new Error(await res.text());
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QUERY_KEY });
-      qc.invalidateQueries({ queryKey: ['drivers'] });
+      qc.invalidateQueries({ queryKey: QUERY_KEY });     // refresca routes.vehicle_id
+      qc.invalidateQueries({ queryKey: ['drivers'] });   // refresca lista de conductores
+      qc.invalidateQueries({ queryKey: ['vehicles'] });  // refresca assigned_driver_id para el lookup
     },
   });
 }

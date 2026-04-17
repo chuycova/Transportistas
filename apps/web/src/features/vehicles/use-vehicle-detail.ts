@@ -198,6 +198,8 @@ export function useVehicleAssignedUserIds(vehicleId: string | undefined) {
 
 // ─── 6. Sincronizar asignaciones (diff + apply) ───────────────────────────────
 // Usado al guardar el form: compara selección actual con BD y aplica el diff.
+// Si se proporciona primaryDriverId, también actualiza vehicles.assigned_driver_id
+// para mantener consistencia con el routing controller y el driver-assignment controller.
 export function useSyncVehicleUsers() {
   const qc = useQueryClient();
   const supabase = createSupabaseBrowserClient();
@@ -208,11 +210,14 @@ export function useSyncVehicleUsers() {
       userIds,
       tenantId,
       assignedBy,
+      primaryDriverId,
     }: {
       vehicleId: string;
       userIds: string[];
       tenantId: string;
       assignedBy: string;
+      /** ID del conductor principal (acceso móvil). Si es '' limpia el campo. */
+      primaryDriverId?: string;
     }) => {
       const { data: current, error: fetchErr } = await supabase
         .from('vehicle_user_assignments')
@@ -246,10 +251,23 @@ export function useSyncVehicleUsers() {
           .eq('id', a.id);
         if (error) throw new Error(error.message);
       }
+
+      // Sincronizar vehicles.assigned_driver_id con el conductor primario seleccionado.
+      // Este campo es el que usan el routing controller y el driver-assignment controller
+      // para encontrar el vehículo del conductor — si no se actualiza aquí, la asignación
+      // de rutas falla con "El conductor no tiene vehículo asignado".
+      if (primaryDriverId !== undefined) {
+        const { error } = await supabase
+          .from('vehicles')
+          .update({ assigned_driver_id: primaryDriverId || null })
+          .eq('id', vehicleId);
+        if (error) throw new Error(error.message);
+      }
     },
     onSuccess: (_, { vehicleId }) => {
       void qc.invalidateQueries({ queryKey: ['vehicle-users', vehicleId] });
       void qc.invalidateQueries({ queryKey: ['vehicle-user-ids', vehicleId] });
+      void qc.invalidateQueries({ queryKey: ['vehicles'] });
     },
   });
 }

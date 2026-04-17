@@ -12,7 +12,7 @@ import type {
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 const LIST_SELECT =
-  'id, tenant_id, name, description, status, origin_name, dest_name, total_distance_m, estimated_duration_s, deviation_threshold_m, vehicle_id, created_at, updated_at, polyline_coords';
+  'id, tenant_id, name, description, status, origin_name, dest_name, total_distance_m, estimated_duration_s, deviation_threshold_m, risk_level, max_deviation_m, gps_timeout_s, max_speed_kmh, version, vehicle_id, created_at, updated_at, polyline_coords, stops, created_by';
 
 function toLineStringWKT(points: Coordinate[]): string {
   return `LINESTRING(${points.map((p) => `${p.lng} ${p.lat}`).join(', ')})`;
@@ -30,6 +30,16 @@ class SupabaseRouteAdapter implements IRouteRepository {
       .order('created_at', { ascending: false });
     if (error) throw new Error(error.message);
     return data as RouteRow[];
+  }
+
+  async findById(id: string): Promise<RouteRow | null> {
+    const { data, error } = await this.db
+      .from('routes_with_polyline')
+      .select(LIST_SELECT)
+      .eq('id', id)
+      .single();
+    if (error) return null;
+    return data as RouteRow;
   }
 
   async create(input: CreateRouteInput, userId: string, tenantId: string): Promise<void> {

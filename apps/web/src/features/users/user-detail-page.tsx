@@ -10,12 +10,15 @@ import {
   User, Shield, Smartphone, CheckCircle2, Circle,
   Check, Eye, EyeOff, Copy, RefreshCw, Wand2,
   ChevronDown, AlertTriangle, Info, Siren,
-  MapPin, Clock, Calendar,
+  MapPin, Clock, Calendar, FileText,
 } from 'lucide-react';
 import {
   useUserDetail, useUpdateUser, useUserVehicleHistory,
   useUserRouteHistory, useUserAlertHistory,
 } from './use-users';
+import {
+  DriverFieldsSection, DriverDocumentsSection, EmergencyContactsSection,
+} from '../drivers/driver-sections';
 
 // ─── Utilidades ───────────────────────────────────────────────────────────────
 
@@ -78,7 +81,7 @@ function UserAvatar({ name, size = 'lg' }: { name: string; size?: 'sm' | 'md' | 
 }
 
 // ─── Tab types ────────────────────────────────────────────────────────────────
-type Tab = 'cuenta' | 'vehiculos' | 'rutas' | 'alertas';
+type Tab = 'cuenta' | 'vehiculos' | 'rutas' | 'alertas' | 'conductor';
 
 // ─── Password helpers ─────────────────────────────────────────────────────────
 const PWD_UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -461,6 +464,9 @@ export function UserDetailPage({ userId }: { userId: string }) {
     { id: 'vehiculos', label: 'Vehículos', icon: <Truck className="h-4 w-4" /> },
     { id: 'rutas',     label: 'Rutas',     icon: <Route className="h-4 w-4" /> },
     { id: 'alertas',   label: 'Alertas',   icon: <Bell className="h-4 w-4" /> },
+    ...(user?.role === 'driver'
+      ? [{ id: 'conductor' as Tab, label: 'Conductor', icon: <FileText className="h-4 w-4" /> }]
+      : []),
   ];
 
   return (
@@ -555,6 +561,13 @@ export function UserDetailPage({ userId }: { userId: string }) {
             {activeTab === 'vehiculos' && <VehiculosTab userId={userId} />}
             {activeTab === 'rutas'     && <RutasTab     userId={userId} />}
             {activeTab === 'alertas'   && <AlertasTab   userId={userId} />}
+            {activeTab === 'conductor' && (
+              <div className="space-y-6">
+                <DriverFieldsSection driverId={userId} />
+                <DriverDocumentsSection driverId={userId} />
+                <EmergencyContactsSection driverId={userId} />
+              </div>
+            )}
           </motion.div>
         </AnimatePresence>
       </div>

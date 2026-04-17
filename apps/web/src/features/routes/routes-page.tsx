@@ -1,9 +1,11 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Route, X, Trash2, ToggleLeft, ToggleRight, MapPin, Car, Navigation, UserCheck } from 'lucide-react';
+import { Plus, Route, X, Trash2, ToggleLeft, ToggleRight, MapPin, Car, Navigation, UserCheck, User, ExternalLink } from 'lucide-react';
 import { APIProvider, Map as GMap, AdvancedMarker, Pin, Polyline } from '@vis.gl/react-google-maps';
 import { useVehicles } from '../vehicles/use-vehicles';
+import { useUsers } from '../users/use-users';
 import type { MapMouseEvent } from '@vis.gl/react-google-maps';
 import {
   useRoutes,
@@ -474,8 +476,14 @@ function CreateRouteModal({ onClose }: { onClose: () => void }) {
 
 export function RoutesPage() {
   const { data: routes = [], isLoading, error } = useRoutes();
+  const { data: vehicles = [] } = useVehicles();
+  const { data: users = [] } = useUsers();
   const updateStatus = useUpdateRouteStatus();
   const deleteRoute = useDeleteRoute();
+
+  // Lookups client-side para trazabilidad de asignación
+  const vehicleMap = Object.fromEntries(vehicles.map((v) => [v.id, v]));
+  const userMap    = Object.fromEntries(users.map((u) => [u.id, u]));
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<RouteRow | null>(null);
@@ -532,75 +540,110 @@ export function RoutesPage() {
       )}
 
       {!isLoading && !error && (
-        <div className="space-y-3">
-          <AnimatePresence>
-            {routes.map((r) => {
-              const meta = STATUS_META[r.status] ?? STATUS_META.inactive;
-              return (
-                <motion.div
-                  key={r.id}
-                  layout
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.97 }}
-                  className="group flex items-center gap-4 rounded-2xl border border-border/50 bg-card/60 p-4 transition-shadow hover:shadow-lg hover:shadow-black/20"
-                >
-                  {/* Icon */}
-                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Route className="h-5 w-5" />
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-semibold truncate">{r.name}</p>
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${meta.className}`}>
+        <div>
+          {/* Grid compacto — 3 columnas en pantallas medianas, 2 en sm, 1 en xs */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            <AnimatePresence>
+              {routes.map((r) => {
+                const meta = STATUS_META[r.status] ?? STATUS_META.inactive;
+                const assignedVehicle  = r.vehicle_id ? vehicleMap[r.vehicle_id] : null;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const assignedDriverId = assignedVehicle ? (assignedVehicle as any).assigned_driver_id as string | null : null;
+                const assignedDriver   = assignedDriverId ? userMap[assignedDriverId] : null;
+                return (
+                  <motion.div
+                    key={r.id}
+                    layout
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.97 }}
+                    className="group relative flex flex-col gap-2.5 rounded-2xl border border-border/50 bg-card/60 p-4 transition-shadow hover:shadow-lg hover:shadow-black/20"
+                  >
+                    {/* Header: icono + nombre + status */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                          <Route className="h-4 w-4" />
+                        </div>
+                        <p className="font-semibold text-sm leading-tight truncate">{r.name}</p>
+                      </div>
+                      <span className={`flex-shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${meta.className}`}>
                         {meta.label}
                       </span>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
+
+                    {/* Origen → Destino */}
+                    <p className="text-[11px] text-muted-foreground leading-tight">
                       <span className="text-emerald-400/80">{r.origin_name}</span>
-                      <span className="mx-1.5 text-muted-foreground/40">→</span>
+                      <span className="mx-1 text-muted-foreground/40">→</span>
                       <span className="text-red-400/80">{r.dest_name}</span>
                     </p>
-                    {r.vehicle_id && (
-                      <p className="text-[10px] text-primary/70 mt-0.5 flex items-center gap-1">
-                        <Car className="h-3 w-3" /> Asignado a vehículo
-                      </p>
-                    )}
-                    <div className="mt-1.5 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                      <span>Distancia: <span className="text-foreground font-medium">{fmtDistance(r.total_distance_m)}</span></span>
-                      <span>Duración: <span className="text-foreground font-medium">{fmtDuration(r.estimated_duration_s)}</span></span>
-                      <span>Desviación: <span className="text-amber-400 font-medium">{r.deviation_threshold_m ?? 50} m</span></span>
-                    </div>
-                  </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-                    {r.status === 'active' && (
-                      <button type="button" onClick={() => setAssignTarget(r)}
-                        className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs text-primary hover:bg-primary/10 transition-colors"
-                        title="Asignar a conductor">
-                        <UserCheck className="h-3.5 w-3.5" /> Asignar
-                      </button>
-                    )}
-                    <button type="button" onClick={() => toggleStatus(r)}
-                      className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-1.5 text-xs hover:bg-muted transition-colors"
-                      title={r.status === 'active' ? 'Desactivar' : 'Activar'}>
-                      {r.status === 'active'
-                        ? <ToggleRight className="h-4 w-4 text-emerald-400" />
-                        : <ToggleLeft className="h-4 w-4 text-muted-foreground" />}
-                      {r.status === 'active' ? 'Desactivar' : 'Activar'}
-                    </button>
-                    <button type="button" onClick={() => setDeleteTarget(r)}
-                      className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 transition-colors">
-                      <Trash2 className="h-3 w-3" /> Eliminar
-                    </button>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
+                    {/* Badges conductor/vehículo (resumido) */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {assignedVehicle ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                          <Car className="h-2.5 w-2.5" />
+                          {assignedVehicle.alias ?? assignedVehicle.plate}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-muted/20 border border-border/40 px-1.5 py-0.5 text-[10px] text-muted-foreground/60">
+                          Sin vehículo
+                        </span>
+                      )}
+                      {assignedDriver ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400">
+                          <User className="h-2.5 w-2.5" />
+                          {assignedDriver.full_name}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-400">
+                          Sin conductor
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Stat chips */}
+                    <div className="flex gap-2 text-[10px] text-muted-foreground">
+                      <span>{fmtDistance(r.total_distance_m)}</span>
+                      <span className="text-border">·</span>
+                      <span>{fmtDuration(r.estimated_duration_s)}</span>
+                    </div>
+
+                    {/* Footer: ver detalle + acciones quick */}
+                    <div className="flex items-center justify-between gap-2 pt-0.5 border-t border-border/30 mt-0.5">
+                      <Link
+                        href={`/routes/${r.id}`}
+                        className="flex items-center gap-1 text-[11px] text-primary hover:underline font-medium"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Ver detalle
+                      </Link>
+                      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        {r.status === 'active' && (
+                          <button type="button" onClick={() => setAssignTarget(r)}
+                            className="rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-[10px] text-primary hover:bg-primary/10 transition-colors"
+                          >
+                            Asignar
+                          </button>
+                        )}
+                        <button type="button" onClick={() => toggleStatus(r)}
+                          className="rounded-md border border-border/50 px-2 py-1 text-[10px] hover:bg-muted transition-colors"
+                        >
+                          {r.status === 'active' ? 'Desactivar' : 'Activar'}
+                        </button>
+                        <button type="button" onClick={() => setDeleteTarget(r)}
+                          className="rounded-md border border-destructive/30 px-2 py-1 text-[10px] text-destructive hover:bg-destructive/10 transition-colors"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
 
           {routes.length === 0 && (
             <div className="flex h-48 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/50 text-muted-foreground">
@@ -652,14 +695,29 @@ export function RoutesPage() {
 
       {/* Modal de asignación de conductor */}
       <AnimatePresence>
-        {assignTarget && (
-          <AssignDriverModal
-            routeId={assignTarget.id}
-            routeName={assignTarget.name}
-            open={!!assignTarget}
-            onClose={() => setAssignTarget(null)}
-          />
-        )}
+        {assignTarget && (() => {
+          // Resolver asignación actual del assignTarget para pasarla al modal
+          const aVehicle  = assignTarget.vehicle_id ? vehicleMap[assignTarget.vehicle_id] : null;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const aDriverId = aVehicle ? (aVehicle as any).assigned_driver_id as string | null : null;
+          const aDriver   = aDriverId ? userMap[aDriverId] : null;
+          const currentAssignment = (aDriver && aVehicle)
+            ? {
+                driverId:     aDriverId!,
+                driverName:   aDriver.full_name,
+                vehiclePlate: (aVehicle as typeof aVehicle & { plate: string }).plate ?? '',
+              }
+            : null;
+          return (
+            <AssignDriverModal
+              routeId={assignTarget.id}
+              routeName={assignTarget.name}
+              open={!!assignTarget}
+              onClose={() => setAssignTarget(null)}
+              currentAssignment={currentAssignment}
+            />
+          );
+        })()}
       </AnimatePresence>
     </div>
   );

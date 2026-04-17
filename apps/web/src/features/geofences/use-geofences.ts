@@ -77,9 +77,17 @@ export function useCreateGeofence() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: CreateGeofenceInput) => {
-      const { data, error } = await db()
+      const supabase = db();
+
+      // RLS exige tenant_id = auth_tenant_id() en el WITH CHECK
+      const { data: { session } } = await supabase.auth.getSession();
+      const tenantId = session?.user?.user_metadata?.tenant_id as string | undefined;
+      if (!tenantId) throw new Error('No se pudo obtener el tenant de la sesión');
+
+      const { data, error } = await supabase
         .from('geofences')
         .insert({
+          tenant_id: tenantId,
           name: input.name,
           description: input.description ?? null,
           type: input.type,

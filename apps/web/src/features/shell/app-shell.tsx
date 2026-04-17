@@ -11,28 +11,76 @@
 // layout protegido.
 
 import type { ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Map as MapIcon, Truck, LogOut, Route as RouteIcon, History, Settings, Users, ShieldAlert } from 'lucide-react';
+import { Map as MapIcon, Truck, LogOut, Route as RouteIcon, History, Settings, Users, ShieldAlert, Bell, PackagePlus, AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SocketInitialize } from '@/features/dashboard/socket-manager';
 import { LiveMap } from '@/features/dashboard/live-map';
 import { VehicleListSidebar } from '@/features/dashboard/vehicle-list-sidebar';
+import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 const NAV_ITEMS = [
-  { href: '/', icon: MapIcon, label: 'Mapa en vivo', exact: true },
-  { href: '/vehicles', icon: Truck, label: 'Flotilla', exact: false },
-  { href: '/users', icon: Users, label: 'Usuarios', exact: false },
-  { href: '/routes', icon: RouteIcon, label: 'Rutas', exact: false },
-  { href: '/historial', icon: History, label: 'Historial', exact: false },
-  { href: '/geofences', icon: ShieldAlert, label: 'Geocercas', exact: false },
+  { href: '/',           icon: MapIcon,    label: 'Mapa en vivo', exact: true },
+  { href: '/vehicles',   icon: Truck,       label: 'Flotilla',     exact: false },
+  { href: '/users',      icon: Users,       label: 'Usuarios',     exact: false },
+  { href: '/routes',     icon: RouteIcon,    label: 'Rutas',        exact: false },
+  { href: '/trips',      icon: PackagePlus, label: 'Viajes',       exact: false },
+  { href: '/historial',  icon: History,     label: 'Historial',    exact: false },
+  { href: '/geofences',  icon: ShieldAlert,   label: 'Geocercas',  exact: false },
+  { href: '/incidents',  icon: AlertTriangle, label: 'Incidentes', exact: false },
 ];
 
-export function AppShell({ children }: { children: ReactNode }) {
-  const { signOut } = useAuth();
-  const pathname = usePathname();
+// ─── Hook: badge de notificaciones ───────────────────────────────────────────
+// Cuenta alertas no resueltas del tenant actual en tiempo real.
 
-  // El mapa de dashboard solo es visible en "/"
+function useUnreadAlertCount(): number {
+  const supabase = createSupabaseBrowserClient();
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let tenantId: string | undefined;
+
+    const fetchCount = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      tenantId = session?.user?.user_metadata?.tenant_id as string | undefined;
+      if (!tenantId) return;
+
+      const { count: c } = await supabase
+        .from('alerts')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .eq('is_resolved', false);
+
+      setCount(c ?? 0);
+    };
+
+    void fetchCount();
+
+    // Suscripción realtime para mantener el badge actualizado
+    const channel = supabase
+      .channel('shell-alert-count')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'alerts',
+      }, () => { void fetchCount(); })
+      .subscribe();
+
+    return () => { void supabase.removeChannel(channel); };
+  }, [supabase]);
+
+  return count;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function AppShell({ children }: { children: ReactNode }) {
+  const { signOut }   = useAuth();
+  const pathname      = usePathname();
+  const unreadAlerts  = useUnreadAlertCount();
+
   const isMapPage = pathname === '/';
 
   return (
@@ -75,6 +123,26 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <div className="flex-1" />
 
+        {/* Notificaciones — con badge de conteo encima de Ajustes */}
+        <Link
+          href="/notifications"
+          className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors mb-1 ${
+            pathname.startsWith('/notifications')
+              ? 'bg-primary/20 text-primary'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+          }`}
+          title="Notificaciones"
+          aria-label="Notificaciones"
+        >
+          <Bell className="h-5 w-5" />
+          {unreadAlerts > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-black text-white leading-none">
+              {unreadAlerts > 9 ? '9+' : unreadAlerts}
+            </span>
+          )}
+        </Link>
+
+        {/* Ajustes */}
         <Link
           href="/settings"
           className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors mb-2 ${

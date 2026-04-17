@@ -46,9 +46,16 @@ export async function middleware(request: NextRequest) {
 
   // IMPORTANT: Do not run any code between createServerClient and getUser()
   // that could alter the request/response — it will break session refresh.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Wrapped in try-catch: Edge runtime throws "fetch failed" if Supabase is
+  // temporarily unreachable (cold start, network blip). Treat as unauthenticated
+  // so the auth guard redirects to /login instead of returning a 500.
+  let user: { id: string } | null = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch {
+    // Network error — allow the auth guard below to redirect to login
+  }
 
   // ── 2. Auth guard ────────────────────────────────────────────────────────
   const { pathname } = request.nextUrl;

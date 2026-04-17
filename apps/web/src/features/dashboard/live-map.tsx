@@ -7,7 +7,7 @@
 //   - Notificación browser al detectar primer desvío
 //   - Markers SVG con heading, color y ring pulsante si off-route
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import {
   APIProvider,
   Map as GMap,
@@ -44,40 +44,124 @@ function MapFocusController() {
   return null;
 }
 
-// ─── Controladores de mapa (heading + tipo) ───────────────────────────
-// Ambos son imperativos (via useMap) para no crear loops de re-render con vis.gl.
-//
-// Por qué double-rAF en el heading:
-//   vis.gl/react-google-maps aplica sus props internas al mapa TAMBIÉN con un
-//   effect. El orden de effects en React es: hijos primero, padres después.
-//   Pero vis.gl usa su propia cola interna que puede ejecutarse en el mismo frame.
-//   Con double-rAF, nuestro setHeading corre en el 2º frame tras el render,
-//   DESPUÉS de que vis.gl termine, sin que él lo pueda sobrescribir.
-function MapHeadingController({ heading, isSatellite }: { heading: number; isSatellite: boolean }) {
+// ─── Controlador de mapa ──────────────────────────────────────────────────────
+// Maneja mapTypeId (roadmap/hybrid).
+// Heading + tilt quedan en manos del rotateControl nativo de Google Maps,
+// que provee compás + arrastre para rotar/inclinar sin conflictos.
+function MapViewController({ isSatellite }: { isSatellite: boolean }) {
   const map = useMap();
 
-  // ─ Tipo de mapa ─ (independiente del heading)
-  useEffect(() => {
-    if (!map) return;
-    map.setMapTypeId(isSatellite ? 'hybrid' : 'roadmap');
-  }, [map, isSatellite]);
-
-  // ─ Heading ─ (double-rAF para ejecutar DESPUÉS de vis.gl)
+  // ─ Tipo de mapa: double-rAF para evitar race con vis.gl ─
+  // 'hybrid' = satélite + overlay de calles (único modo satélite en vector maps)
   useEffect(() => {
     if (!map) return;
     let raf1: number, raf2: number;
     raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => {
-        map.setHeading(heading);
+        map.setMapTypeId(isSatellite ? 'hybrid' : 'roadmap');
       });
     });
-    return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-    };
-  }, [map, heading]);
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+  }, [map, isSatellite]);
 
   return null;
+}
+
+// ─── Botones de rotación (estilo Google Maps) ─────────────────────────────────
+// Se montan dentro de <GMap> para poder usar useMap().
+// Se ubican a la izquierda de los controles nativos de Google (zoom/compás).
+// El <style> inyectado también redondea los botones +/- de zoom de Google.
+function MapRotationControls({ isDark }: { isDark: boolean }) {
+  const map = useMap();
+
+  const rotate = useCallback((delta: number) => {
+    if (!map) return;
+    map.setHeading(((map.getHeading() ?? 0) + delta + 360) % 360);
+  }, [map]);
+
+  // Paleta idéntica a la que usa Google Maps internamente
+  const bg    = isDark ? '#3c4043' : '#ffffff';
+  const bgHov = isDark ? '#515558' : '#ebebeb';
+  const fg    = isDark ? '#e8eaed' : '#666666';
+  const shdw  = isDark
+    ? '0 1px 4px -1px rgba(0,0,0,0.65)'
+    : '0 1px 4px -1px rgba(0,0,0,0.30)';
+
+  return (
+    <>
+      <style>{`
+        .zz-rot-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px;
+          height: 28px;
+          padding: 0;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          background: ${bg};
+          color: ${fg};
+          box-shadow: ${shdw};
+          font-size: 16px;
+          line-height: 1;
+          font-family: Roboto, Arial, sans-serif;
+          transition: background 0.15s ease, color 0.15s ease;
+          -webkit-font-smoothing: antialiased;
+          user-select: none;
+        }
+        .zz-rot-btn:hover  { background: ${bgHov}; }
+        .zz-rot-btn:active { background: ${isDark ? '#60646a' : '#d5d5d5'}; }
+
+        /* ── Redondear botones +/− de zoom nativos de Google Maps ── */
+        /* Selector estable: aria-label en inglés y español              */
+        button[aria-label="Zoom in"],
+        button[aria-label="Acercar"],
+        button[aria-label="Zoom out"],
+        button[aria-label="Alejar"] {
+          border-radius: 8px !important;
+          overflow: hidden !important;
+        }
+        /* Contenedor del stack zoom (wrapper visual) */
+        .gm-bundled-control-on-bottom > div:last-child > div {
+          border-radius: 8px !important;
+          overflow: hidden !important;
+        }
+      `}</style>
+
+      {/* Panel: 2 botones apilados, alineados con los controles nativos */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 26,
+          right: 50,       // justo a la izquierda del stack zoom de Google (~40px ancho)
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+          zIndex: 2,
+        }}
+      >
+        <button
+          type="button"
+          className="zz-rot-btn"
+          onClick={() => rotate(-45)}
+          title="Rotar izquierda (−45°)"
+          aria-label="Rotar izquierda"
+        >
+          ↺
+        </button>
+        <button
+          type="button"
+          className="zz-rot-btn"
+          onClick={() => rotate(45)}
+          title="Rotar derecha (+45°)"
+          aria-label="Rotar derecha"
+        >
+          ↻
+        </button>
+      </div>
+    </>
+  );
 }
 
 const DEFAULT_CENTER = { lat: 19.4326, lng: -99.1332 };
@@ -153,28 +237,31 @@ function VehicleMarkerSvg({
 }: {
   color: string; heading: number; off: boolean; flash: boolean;
 }) {
+  // El color base del marcador siempre es el del vehículo.
+  // off → ring rojo + cuerpo rojo. flash → ring ámbar pulsante PERO cuerpo mantiene color propio.
+  const bodyColor = off ? '#ef4444' : color;
   return (
     <div style={{ transform: `rotate(${heading}deg)`, transition: 'transform 0.6s ease', transformOrigin: '20px 28px' }}>
       <svg width="40" height="48" viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <title>vehicle marker</title>
-        {/* Ring de foco — solo cuando se selecciona desde el sidebar (flash) */}
+        {/* Ring de foco ámbar — identifica el vehículo seleccionado sin cambiarle el color */}
         {flash && (
-          <circle cx="20" cy="28" r="18" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeOpacity="0.9">
+          <circle cx="20" cy="28" r="18" fill="none" stroke="#f59e0b" strokeWidth="3" strokeOpacity="0.95">
             <animate attributeName="r" values="14;20;14" dur="0.6s" repeatCount="indefinite" />
             <animate attributeName="stroke-opacity" values="1;0.2;1" dur="0.6s" repeatCount="indefinite" />
           </circle>
         )}
-        {/* Ring de desvío — rojo, solo cuando off=true */}
+        {/* Ring de desvío rojo — solo cuando off=true y no hay flash */}
         {off && !flash && (
           <circle cx="20" cy="28" r="17" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeOpacity="0.6">
             <animate attributeName="r" values="13;19;13" dur="1.5s" repeatCount="indefinite" />
             <animate attributeName="stroke-opacity" values="0.8;0;0.8" dur="1.5s" repeatCount="indefinite" />
           </circle>
         )}
-        {/* Cuerpo */}
-        <circle cx="20" cy="28" r="12" fill={off ? '#ef4444' : flash ? '#f59e0b' : color} stroke="white" strokeWidth="2.5" />
-        {/* Flecha de dirección */}
-        <path d="M20 6 L15 20 L20 16 L25 20 Z" fill={off ? '#ef4444' : flash ? '#f59e0b' : color} stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
+        {/* Cuerpo — siempre en el color original del vehículo (o rojo si off-route) */}
+        <circle cx="20" cy="28" r="12" fill={bodyColor} stroke="white" strokeWidth="2.5" />
+        {/* Flecha de dirección — mismo color que el cuerpo */}
+        <path d="M20 6 L15 20 L20 16 L25 20 Z" fill={bodyColor} stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
       </svg>
     </div>
   );
@@ -211,7 +298,15 @@ function DeviationAlert({ vehicles }: { vehicles: Array<{ label: string }> }) {
 // ─── Componente principal ─────────────────────────────────────────────────────
 export function LiveMap() {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
-  const supabase = createSupabaseBrowserClient();
+  // Un Map ID real (creado en Cloud Console con rendering=Vector) es requerido
+  // para que setHeading() funcione. "DEMO_MAP_ID" solo sirve en dev con clave
+  // de prueba — con clave de producción Google fuerza raster y bloquea rotación.
+  const mapId  = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? '';
+  // useMemo garantiza una única instancia estable por montaje.
+  // Sin esto, cada re-render (disparado por Socket.IO) crea un nuevo objeto
+  // → hydrate() se invalida → el effect re-corre → DB snapshot (N-1 pasos)
+  // sobreescribe la posición actual → marker retrocede cada tick.
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
   const liveVehicles   = useTrackingStore((s) => s.vehicles);
   const trails         = useTrackingStore((s) => s.trails);
@@ -231,8 +326,8 @@ export function LiveMap() {
 
   // Hydrate latest positions al montar
   const hydrate = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const tenantId = user?.user_metadata?.tenant_id as string | undefined;
+    const { data: { session } } = await supabase.auth.getSession();
+    const tenantId = session?.user?.user_metadata?.tenant_id as string | undefined;
     if (!tenantId) return;
 
     const { data } = await supabase.rpc('get_latest_locations', { p_tenant_id: tenantId });
@@ -311,25 +406,65 @@ export function LiveMap() {
     : DEFAULT_CENTER;
 
   // ── Estado del mapa ───────────────────────────────────────────────
-  const [mapHeading,  setMapHeading]  = useState(0);
   const [isSatellite, setIsSatellite] = useState(false);
-  const rotateLeft  = () => setMapHeading((h) => (h - 15 + 360) % 360);
-  const rotateRight = () => setMapHeading((h) => (h + 15) % 360);
-  const resetNorth  = () => setMapHeading(0);
+  const [showTraffic, setShowTraffic] = useState(true);
+  const [isDark,      setIsDark]      = useState(true);
 
   return (
     <div className="absolute inset-0 bg-card">
-      {/* ── Badge: conexión en vivo ── */}
-      <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 rounded-full border border-border/50 bg-card/80 px-3 py-1.5 text-xs backdrop-blur-sm shadow-lg">
-        <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground'}`} />
-        <span className={isConnected ? 'text-emerald-400' : 'text-muted-foreground'}>
-          {isConnected ? 'En vivo' : 'Sin conexión'}
-        </span>
-        {liveList.length > 0 && (
-          <span className="ml-1 text-muted-foreground">
-            · {liveList.length} activo{liveList.length !== 1 ? 's' : ''}
+      {/* ── Controles superiores derecha: tema + satélite + tráfico + conexión ── */}
+      <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+
+        {/* Toggle tema oscuro/claro */}
+        <button
+          type="button"
+          onClick={() => setIsDark((d) => !d)}
+          className="flex items-center justify-center rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-lg border bg-card/95 border-border/70 text-foreground hover:bg-card transition-all"
+          title={isDark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
+        >
+          {isDark ? '☀️' : '🌙'}
+        </button>
+
+        {/* Toggle satélite */}
+        <button
+          type="button"
+          onClick={() => setIsSatellite((s) => !s)}
+          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-lg border transition-all ${
+            isSatellite
+              ? 'bg-primary/20 border-primary/60 text-primary hover:bg-primary/30'
+              : 'bg-card/95 border-border/70 text-foreground hover:bg-card'
+          }`}
+          title={isSatellite ? 'Vista mapa' : 'Vista satélite'}
+        >
+          {isSatellite ? '🗺️ Mapa' : '🛰️ Satélite'}
+        </button>
+
+        {/* Toggle tráfico */}
+        <button
+          type="button"
+          onClick={() => setShowTraffic((t) => !t)}
+          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-lg border transition-all ${
+            showTraffic
+              ? 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-700'
+              : 'bg-card/95 border-border/70 text-muted-foreground hover:text-foreground hover:bg-card'
+          }`}
+          title={showTraffic ? 'Ocultar tráfico' : 'Mostrar tráfico'}
+        >
+          🚦 {showTraffic ? 'Tráfico' : 'Sin tráfico'}
+        </button>
+
+        {/* Badge: conexión en vivo */}
+        <div className="flex items-center gap-1.5 rounded-full border border-border/50 bg-card/80 px-3 py-1.5 text-xs backdrop-blur-sm shadow-lg">
+          <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground'}`} />
+          <span className={isConnected ? 'text-emerald-400' : 'text-muted-foreground'}>
+            {isConnected ? 'En vivo' : 'Sin conexión'}
           </span>
-        )}
+          {liveList.length > 0 && (
+            <span className="ml-1 text-muted-foreground">
+              · {liveList.length} activo{liveList.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* ── Alerta de desvío ── */}
@@ -339,18 +474,25 @@ export function LiveMap() {
       <div className="w-full h-full">
         <APIProvider apiKey={apiKey}>
           <GMap
-            mapId="DEMO_MAP_ID"
+            mapId={mapId || 'DEMO_MAP_ID'}
             defaultZoom={13}
             defaultCenter={mapCenter}
             gestureHandling="greedy"
-            disableDefaultUI={true}
+            colorScheme={isDark ? 'DARK' : 'LIGHT'}
+            // Controles nativos de Google Maps
+            disableDefaultUI={false}
+            zoomControl={true}
+            rotateControl={true}
+            fullscreenControl={false}
+            mapTypeControl={false}
+            streetViewControl={false}
+            scaleControl={false}
             style={{ width: '100%', height: '100%' }}
           >
-            {/* Controlador de pan/zoom al hacer doble click en sidebar */}
             <MapFocusController />
-            {/* Controlador de rotación 2D + tipo de mapa — imperativo */}
-            <MapHeadingController heading={mapHeading} isSatellite={isSatellite} />
-            <TrafficLayer />
+            <MapViewController isSatellite={isSatellite} />
+            <MapRotationControls isDark={isDark} />
+            {showTraffic && <TrafficLayer />}
 
             {/* Segmento RECORRIDO de cada ruta (verde semitransparente) */}
             {routeSegments.map(({ id, consumed }) =>
@@ -463,77 +605,6 @@ export function LiveMap() {
         </APIProvider>
       </div>
 
-      {/* ── Controles del mapa (abajo-derecha) ───────────────── */}
-      <div
-        className="absolute bottom-6 right-4 z-10 flex flex-col items-center gap-2"
-        style={{ filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.5))' }}
-      >
-
-        {/* ─ Toggle satélite/mapa ─ */}
-        <button
-          type="button"
-          onClick={() => setIsSatellite((s) => !s)}
-          className={`flex h-8 w-8 items-center justify-center rounded-lg border backdrop-blur-sm transition-all text-xs font-bold ${
-            isSatellite
-              ? 'bg-primary border-primary text-white'
-              : 'bg-card/90 border-border/60 text-foreground hover:bg-primary/10'
-          }`}
-          title={isSatellite ? 'Ver mapa normal' : 'Ver satélite'}
-        >
-          {isSatellite ? '🗺' : '🛰'}
-        </button>
-
-        {/* ─ Separador ─ */}
-        <div className="w-5 border-t border-border/40" />
-
-        {/* ─ Brujula visual (muestra heading actual) ─ */}
-        <div
-          className="flex items-center justify-center rounded-full bg-card/90 border border-border/60 backdrop-blur-sm"
-          style={{ width: 36, height: 36 }}
-          title={`Rumbo: ${Math.round(mapHeading)}°`}
-        >
-          <svg
-            width="20" height="20" viewBox="0 0 20 20"
-            style={{ transform: `rotate(${mapHeading}deg)`, transition: 'transform 0.2s ease' }}
-          >
-            <polygon points="10,1 12.5,10 10,8 7.5,10" fill="#ef4444" />
-            <polygon points="10,19 12.5,10 10,12 7.5,10" fill="#94a3b8" />
-          </svg>
-        </div>
-
-        {/* ─ Rotar izquierda ─ */}
-        <button
-          type="button"
-          onClick={rotateLeft}
-          className="flex h-8 w-8 items-center justify-center rounded-lg bg-card/90 border border-border/60 text-foreground hover:bg-primary hover:text-white hover:border-primary backdrop-blur-sm transition-all text-sm font-bold"
-          title="Rotar izquierda (−15°)"
-        >
-          ↺
-        </button>
-
-        {/* ─ Reset norte ─ */}
-        <button
-          type="button"
-          onClick={resetNorth}
-          className="flex h-8 w-8 items-center justify-center rounded-lg bg-card/90 border border-border/60 text-[10px] font-black text-foreground hover:bg-primary hover:text-white hover:border-primary backdrop-blur-sm transition-all"
-          title="Orientar al norte"
-          style={{ opacity: mapHeading === 0 ? 0.4 : 1, transition: 'opacity 0.2s' }}
-        >
-          N
-        </button>
-
-        {/* ─ Rotar derecha ─ */}
-        <button
-          type="button"
-          onClick={rotateRight}
-          className="flex h-8 w-8 items-center justify-center rounded-lg bg-card/90 border border-border/60 text-foreground hover:bg-primary hover:text-white hover:border-primary backdrop-blur-sm transition-all text-sm font-bold"
-          title="Rotar derecha (+15°)"
-        >
-          ↻
-        </button>
-
-      </div>
-
       {/* Panel de dev (solo en desarrollo) */}
       {process.env.NODE_ENV === 'development' && <DevPingPanel />}
 
@@ -547,6 +618,18 @@ export function LiveMap() {
           </div>
         </div>
       )}
+
+      {/* Badge: sin Map ID → raster, sin rotación */}
+      {apiKey && !mapId && (
+        <div className="absolute bottom-6 left-4 z-10 flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-400 backdrop-blur-sm shadow-lg max-w-xs">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0" aria-hidden="true">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>Mapa en modo raster — rotación deshabilitada. Configura <code className="font-mono">NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID</code>.</span>
+        </div>
+      )}
+
     </div>
   );
 }

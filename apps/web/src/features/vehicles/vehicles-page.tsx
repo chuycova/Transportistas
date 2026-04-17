@@ -398,10 +398,10 @@ function VehicleModal({
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Sin sesión activa');
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Sin sesión activa');
 
-    const tenantId = user.user_metadata?.tenant_id as string;
+    const tenantId = session.user.user_metadata?.tenant_id as string;
 
     const payload = {
       plate: form.plate.toUpperCase(),
@@ -424,12 +424,13 @@ function VehicleModal({
       vehicleId = created.id;
     }
 
-    // Sincronizar asignaciones de usuarios
+    // Sincronizar asignaciones de usuarios + actualizar conductor principal
     await syncUsers.mutateAsync({
       vehicleId,
       userIds: form.assigned_user_ids,
       tenantId,
-      assignedBy: user.id,
+      assignedBy: session.user.id,
+      primaryDriverId: form.assigned_driver_id, // sincroniza vehicles.assigned_driver_id
     });
 
     onClose();

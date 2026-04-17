@@ -21,6 +21,7 @@ import {
   useVehicleRoutes, useVehicleAlerts, useVehicleTrack,
   useVehicleAssignedUsers, useAddVehicleUser, useRemoveVehicleUser,
 } from './use-vehicle-detail';
+import { VehicleFieldsSection, VehicleDocumentsSection, MaintenanceSection } from './vehicle-sections';
 import { useTrackingStore } from '../../stores/use-tracking-store';
 import { useRoutes } from '../routes/use-routes';
 import { useUsers } from '../users/use-users';
@@ -872,6 +873,15 @@ export function VehicleDetailPage({ vehicleId }: { vehicleId: string }) {
           <RoutesHistory vehicleId={vehicleId} />
           <AlertsHistory vehicleId={vehicleId} />
         </div>
+
+        {/* ── Datos técnicos / legales ──────────────────────────────────── */}
+        <VehicleFieldsSection vehicleId={vehicleId} />
+
+        {/* ── Documentos del vehículo ───────────────────────────────────── */}
+        <VehicleDocumentsSection vehicleId={vehicleId} />
+
+        {/* ── Historial de mantenimiento ────────────────────────────────── */}
+        <MaintenanceSection vehicleId={vehicleId} />
 
       </div>
     </div>

@@ -801,8 +801,19 @@ export function UsersPage() {
         </div>
       )}
       {driversError && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-          {(driversError as Error).message}
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive space-y-2">
+          <p className="font-semibold">No se pudo cargar la lista de usuarios</p>
+          <p className="text-xs opacity-80">
+            {(driversError as Error).message === 'Failed to fetch'
+              ? 'No se pudo conectar con el servidor API. Verifica que el backend esté corriendo.'
+              : (driversError as Error).message}
+          </p>
+          <button
+            onClick={() => void refetch()}
+            className="mt-1 rounded-lg border border-destructive/40 px-3 py-1 text-xs hover:bg-destructive/20 transition-colors"
+          >
+            Reintentar
+          </button>
         </div>
       )}
       {!isLoading && !driversError && (
