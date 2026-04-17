@@ -16,11 +16,11 @@
     "clean": "rm -rf dist tsconfig.build.tsbuildinfo"
   },
   "dependencies": {
-    "@nestjs/common": "^11.1.0",
+    "@nestjs/common": "^11.1.18",
     "@nestjs/config": "^4.0.0",
-    "@nestjs/core": "^11.1.0",
+    "@nestjs/core": "^11.1.18",
     "@nestjs/passport": "^11.0.0",
-    "@nestjs/platform-express": "^11.1.0",
+    "@nestjs/platform-express": "^11.1.18",
     "@nestjs/platform-socket.io": "^11.1.0",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^11.1.0",

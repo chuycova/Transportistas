@@ -85,3 +85,9 @@ packages/*/src/**/*.js.map
 # Documentos de trabajo internos
 errors.md
 VEHICLE_MONITORING_ROADMAP.md
+bugs.md
+implementation_plan.md
+
+# Documentos de referencia binarios (PDFs, etc.)
+Diccionario-de-Datos-Puertos3.pdf
+*.local.pdf

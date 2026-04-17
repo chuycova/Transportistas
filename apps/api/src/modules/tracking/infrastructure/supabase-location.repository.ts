@@ -41,6 +41,7 @@ export class SupabaseLocationRepository implements ILocationRepository {
       p_tenant_id: input.tenantId,
       p_vehicle_id: input.vehicleId,
       p_route_id: input.routeId ?? null,
+      p_trip_id: (input as { tripId?: string }).tripId ?? null,
       p_lat: input.coordinate.lat,
       p_lng: input.coordinate.lng,
       p_speed_kmh: input.speedKmh ?? null,
@@ -63,6 +64,7 @@ export class SupabaseLocationRepository implements ILocationRepository {
       tenant_id: input.tenantId,
       vehicle_id: input.vehicleId,
       route_id: input.routeId ?? null,
+      trip_id: (input as { tripId?: string }).tripId ?? null,
       // Supabase no acepta geography directamente; usamos la función de inserción
       // para locations individuales, pero para bulk usamos insert directo con RPC
       point: `POINT(${input.coordinate.lng} ${input.coordinate.lat})`,

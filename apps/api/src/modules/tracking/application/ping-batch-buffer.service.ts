@@ -25,6 +25,7 @@ export interface RawPing {
   vehicleId: string;
   tenantId: string;
   routeId?: string;
+  tripId?: string;
   lat: number;
   lng: number;
   speedKmh?: number;

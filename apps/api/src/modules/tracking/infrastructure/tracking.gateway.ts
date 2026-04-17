@@ -87,6 +87,9 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     const session = this.driverSessions.get(client.id);
     if (session) {
       this.driverSessions.delete(client.id);
+      // Ignorar sesiones sin vehicleId válido (p. ej. clientes web o desconexiones
+      // antes de que el conductor llame tracking:start)
+      if (!session.vehicleId) return;
       try {
         // Solo marcar inactive si ningún otro socket del mismo vehículo sigue conectado
         const stillConnected = [...this.driverSessions.values()].some(
@@ -128,6 +131,11 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { vehicleId: string; tenantId: string },
   ) {
+    // No registrar sesiones con vehicleId vacío o inválido
+    if (!data.vehicleId || !data.tenantId) {
+      this.logger.warn(`tracking:start ignorado: vehicleId o tenantId vacío (socket=${client.id})`);
+      return { event: 'tracking:error', data: { reason: 'vehicleId_required' } };
+    }
     this.driverSessions.set(client.id, { vehicleId: data.vehicleId, tenantId: data.tenantId });
     this.logger.log(`Conductor registrado: socket=${client.id} vehicleId=${data.vehicleId}`);
     return { event: 'tracking:started' };

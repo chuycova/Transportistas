@@ -34,6 +34,7 @@ export interface IncomingPingDto {
   vehicleId: string;
   tenantId: string;
   routeId?: string;
+  tripId?: string;
   coordinate: Coordinate;
   speedKmh?: number;
   headingDeg?: number;
@@ -107,6 +108,7 @@ export class ProcessLocationUseCase implements OnModuleInit {
       vehicleId: ping.vehicleId,
       tenantId: ping.tenantId,
       routeId: ping.routeId,
+      tripId: ping.tripId,
       lat: ping.coordinate.lat,
       lng: ping.coordinate.lng,
       speedKmh: ping.speedKmh,
@@ -185,6 +187,7 @@ export class ProcessLocationUseCase implements OnModuleInit {
         tenantId: ping.tenantId,
         vehicleId: ping.vehicleId,
         routeId: ping.routeId,
+        tripId: ping.tripId,
         coordinate: snappedCoord,     // Guardar coordenada snapeada, no la raw del GPS
         speedKmh: ping.speedKmh,
         headingDeg: ping.headingDeg,

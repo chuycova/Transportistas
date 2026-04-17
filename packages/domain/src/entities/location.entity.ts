@@ -6,6 +6,7 @@ export interface Location {
   readonly tenantId: string;
   readonly vehicleId: string;
   readonly routeId?: string;
+  readonly tripId?: string;
 
   readonly coordinate: Coordinate;
 
@@ -28,6 +29,7 @@ export interface CreateLocationInput {
   tenantId: string;
   vehicleId: string;
   routeId?: string;
+  tripId?: string;
   coordinate: Coordinate;
   speedKmh?: number;
   headingDeg?: number;
