@@ -76,6 +76,16 @@ export function SettingsScreen() {
         </View>
       </View>
 
+      {/* Mi perfil */}
+      <TouchableOpacity
+        style={styles.profileBtn}
+        onPress={() => navigation.navigate('DriverProfile')}
+        accessibilityLabel="Mi perfil"
+        accessibilityRole="button"
+      >
+        <Text style={styles.profileBtnText}>Mi perfil · Documentos</Text>
+      </TouchableOpacity>
+
       {/* Ajustes Generales */}
       <TouchableOpacity
         style={styles.generalSettingsBtn}
@@ -172,6 +182,16 @@ const styles = StyleSheet.create({
     borderColor: '#FF444444',
   },
   logoutText: { color: '#FF4444', fontSize: 16, fontWeight: '600' },
+  profileBtn: {
+    backgroundColor: '#6C63FF22',
+    borderRadius: 14,
+    padding: 18,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#6C63FF44',
+    marginBottom: 12,
+  },
+  profileBtnText: { color: '#6C63FF', fontSize: 16, fontWeight: '600' },
   generalSettingsBtn: {
     backgroundColor: '#12121C',
     borderRadius: 14,

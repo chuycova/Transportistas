@@ -8,13 +8,14 @@
 import { Database } from '@nozbe/watermelondb';
 import SQLiteAdapter from '@nozbe/watermelondb/adapters/sqlite';
 import { schema } from './schema';
+import { migrations } from './migrations';
 import { GpsPing } from './models/GpsPing.model';
 import { LocalAlert } from './models/LocalAlert.model';
 
 // ─── Adapter SQLite (usa expo-sqlite internamente) ────────────────────────────
 const adapter = new SQLiteAdapter({
   schema,
-  // migrations: migrations, ← añadir cuando version > 1
+  migrations,
   jsi: true,     // JSI adapter: más rápido que el bridge (requiere hermes)
   onSetUpError: (error) => {
     // En caso de corrupción de DB, eliminar y recrear
@@ -35,6 +36,7 @@ export async function enqueuePing(params: {
   vehicleId: string;
   tenantId: string;
   routeId?: string;
+  tripId?: string;
   lat: number;
   lng: number;
   speedKmh?: number;
@@ -47,6 +49,7 @@ export async function enqueuePing(params: {
       ping.vehicleId  = params.vehicleId;
       ping.tenantId   = params.tenantId;
       ping.routeId    = params.routeId ?? null;
+      ping.tripId     = params.tripId ?? null;
       ping.lat        = params.lat;
       ping.lng        = params.lng;
       ping.speedKmh   = params.speedKmh ?? null;

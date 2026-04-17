@@ -15,12 +15,14 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@lib/supabase';
 import { LoginScreen } from '@features/auth/screens/LoginScreen';
 import { GeneralSettingsScreen } from '@features/settings/screens/GeneralSettingsScreen';
+import { ProfileScreen } from '@features/profile/screens/ProfileScreen';
 import { MainTabNavigator } from './MainTabNavigator';
 
 export type RootStackParamList = {
   Login: undefined;
   MainTabs: undefined;
   GeneralSettings: undefined;
+  DriverProfile: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -71,12 +73,25 @@ export function RootNavigator() {
               component={GeneralSettingsScreen}
               options={{
                 headerShown: true,
-                headerStyle: { backgroundColor: '#F5F5F7' },
-                headerTintColor: '#0A0A0F',
-                headerTitleStyle: { fontWeight: '600' },
+                headerStyle: { backgroundColor: '#12121C' },
+                headerTintColor: '#FFFFFF',
+                headerTitleStyle: { fontWeight: '600', color: '#FFFFFF' },
                 headerShadowVisible: false,
                 title: 'Ajustes Generales',
                 headerBackTitle: 'Volver',
+              }}
+            />
+            <Stack.Screen
+              name="DriverProfile"
+              component={ProfileScreen}
+              options={{
+                headerShown: true,
+                headerStyle: { backgroundColor: '#12121C' },
+                headerTintColor: '#FFFFFF',
+                headerTitleStyle: { fontWeight: '600' },
+                headerShadowVisible: false,
+                title: 'Mi perfil',
+                headerBackTitle: 'Ajustes',
               }}
             />
           </>

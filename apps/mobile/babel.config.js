@@ -19,6 +19,8 @@ module.exports = function (api) {
           },
         },
       ],
+      // ─── Reanimated 4: plugin migrado a react-native-worklets ────────
+      'react-native-worklets/plugin',
     ],
   };
 };

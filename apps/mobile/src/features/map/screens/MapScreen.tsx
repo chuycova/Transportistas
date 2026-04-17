@@ -60,6 +60,7 @@ export function MapScreen() {
         region={hasLocation ? region : undefined}
         showsUserLocation
         showsMyLocationButton={false}
+        showsBuildings={false}
         customMapStyle={darkMapStyle}
       >
         {hasLocation ? (
@@ -103,8 +104,9 @@ const darkMapStyle = [
   { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#2A2A3F' }] },
   { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#3A3A5C' }] },
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#060610' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi',               stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit',           stylers: [{ visibility: 'off' }] },
+  { featureType: 'landscape.man_made',stylers: [{ visibility: 'off' }] },
 ];
 
 const styles = StyleSheet.create({

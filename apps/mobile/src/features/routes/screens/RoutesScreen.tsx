@@ -363,10 +363,6 @@ export function RoutesScreen() {
         />
       }
     >
-      <Text style={styles.greeting}>
-        Hola, {data?.driver.full_name?.split(' ')[0] ?? 'Conductor'} 👋
-      </Text>
-
       {!data?.vehicle ? (
         <NoVehicleState />
       ) : !data.activeRoute ? (
@@ -385,10 +381,6 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: '#0A0A0F',
     justifyContent: 'center', alignItems: 'center', gap: 12, padding: 24,
   },
-  greeting: {
-    color: '#FFFFFF', fontSize: 20, fontWeight: '700', marginBottom: 20,
-  },
-
   // Estados de espera
   stateContainer: { alignItems: 'center', paddingTop: 40, gap: 12 },
   stateIcon: { fontSize: 56 },

@@ -48,6 +48,7 @@ export function usePingSync() {
             vehicleId:  ping.vehicleId,
             tenantId:   ping.tenantId,
             routeId:    ping.routeId ?? undefined,
+            tripId:     ping.tripId ?? undefined,
             coordinate: { lat: ping.lat, lng: ping.lng },
             speedKmh:   ping.speedKmh ?? undefined,
             headingDeg: ping.headingDeg ?? undefined,

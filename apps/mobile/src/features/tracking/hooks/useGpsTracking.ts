@@ -25,6 +25,7 @@ export interface GpsTrackingOptions {
   vehicleId: string;
   tenantId: string;
   routeId?: string;
+  tripId?: string;
 }
 
 export interface GpsTrackingState {
@@ -59,7 +60,7 @@ export function useGpsTracking(options: GpsTrackingOptions) {
   // ─── Handler de posición (foreground) ────────────────────────────────────
   const handleLocation = useCallback(async (location: Location.LocationObject) => {
     const { latitude: lat, longitude: lng, speed, heading, accuracy } = location.coords;
-    const { vehicleId, tenantId, routeId } = optionsRef.current;
+    const { vehicleId, tenantId, routeId, tripId } = optionsRef.current;
 
     setState((prev) => ({ ...prev, lastCoordinate: { lat, lng }, heading: heading ?? prev.heading }));
 
@@ -67,6 +68,7 @@ export function useGpsTracking(options: GpsTrackingOptions) {
       vehicleId,
       tenantId,
       routeId,
+      tripId,
       coordinate: { lat, lng },
       speedKmh:   speed  != null ? Number((speed  * 3.6).toFixed(1)) : undefined,
       headingDeg: heading != null ? Math.round(heading) : undefined,
@@ -82,6 +84,7 @@ export function useGpsTracking(options: GpsTrackingOptions) {
         vehicleId,
         tenantId,
         routeId,
+        tripId,
         lat,
         lng,
         speedKmh:   payload.speedKmh,
@@ -138,7 +141,10 @@ export function useGpsTracking(options: GpsTrackingOptions) {
       }
 
       // Notificar al backend que esta sesión pertenece a este vehículo
-      emitTrackingStart(vehicleId, tenantId);
+      // Solo emitir si vehicleId es un UUID válido (no vacío)
+      if (vehicleId) {
+        emitTrackingStart(vehicleId, tenantId);
+      }
 
       setState((prev) => ({ ...prev, isTracking: true, error: null }));
     } catch (err) {

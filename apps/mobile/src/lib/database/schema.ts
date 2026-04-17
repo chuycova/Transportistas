@@ -6,7 +6,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export const schema = appSchema({
-  version: 1,
+  version: 2,
   tables: [
     // ─── Cola de pings GPS (offline queue) ─────────────────────────────────
     tableSchema({
@@ -15,6 +15,7 @@ export const schema = appSchema({
         { name: 'vehicle_id',   type: 'string' },
         { name: 'tenant_id',    type: 'string' },
         { name: 'route_id',     type: 'string',  isOptional: true },
+        { name: 'trip_id',      type: 'string',  isOptional: true },
         { name: 'lat',          type: 'number' },
         { name: 'lng',          type: 'number' },
         { name: 'speed_kmh',    type: 'number',  isOptional: true },

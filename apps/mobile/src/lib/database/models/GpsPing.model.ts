@@ -13,6 +13,7 @@ export class GpsPing extends Model {
   @field('vehicle_id')   vehicleId!: string;
   @field('tenant_id')    tenantId!: string;
   @field('route_id')     routeId!: string | null;
+  @field('trip_id')      tripId!: string | null;
   @field('lat')          lat!: number;
   @field('lng')          lng!: number;
   @field('speed_kmh')    speedKmh!: number | null;
