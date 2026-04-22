@@ -141,8 +141,9 @@ export function IncidentsPage() {
   const criticalCount = incidents?.filter((i) => i.severity === 'critical').length ?? 0;
 
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-5xl mx-auto">
-      {/* Header */}
+    <div className="flex-1 overflow-y-auto bg-background p-6">
+      <div className="flex flex-col gap-6">
+        {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Incidentes</h1>
@@ -221,6 +222,7 @@ export function IncidentsPage() {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }

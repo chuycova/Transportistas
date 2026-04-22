@@ -419,24 +419,49 @@ export function LiveMap() {
         <button
           type="button"
           onClick={() => setIsDark((d) => !d)}
-          className="flex items-center justify-center rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-lg border bg-card/95 border-border/70 text-foreground hover:bg-card transition-all"
+          className="flex items-center justify-center rounded-lg px-2.5 py-1.5 shadow-lg border bg-card/95 border-border/70 text-foreground hover:bg-card transition-all"
           title={isDark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
+          aria-label={isDark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
         >
-          {isDark ? '☀️' : '🌙'}
+          {isDark ? (
+            // Sol
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4"/>
+              <line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+          ) : (
+            // Luna
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+          )}
         </button>
 
         {/* Toggle satélite */}
         <button
           type="button"
           onClick={() => setIsSatellite((s) => !s)}
-          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-lg border transition-all ${
-            isSatellite
-              ? 'bg-primary/20 border-primary/60 text-primary hover:bg-primary/30'
-              : 'bg-card/95 border-border/70 text-foreground hover:bg-card'
-          }`}
+          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-lg border bg-card/95 border-border/70 text-foreground hover:bg-card transition-all"
           title={isSatellite ? 'Vista mapa' : 'Vista satélite'}
+          aria-pressed={isSatellite}
         >
-          {isSatellite ? '🗺️ Mapa' : '🛰️ Satélite'}
+          {isSatellite ? (
+            // Icono mapa (volver a roadmap)
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/>
+              <line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/>
+            </svg>
+          ) : (
+            // Icono satélite
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="2"/>
+              <path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/>
+            </svg>
+          )}
+          {isSatellite ? 'Mapa' : 'Satelite'}
         </button>
 
         {/* Toggle tráfico */}
@@ -449,8 +474,16 @@ export function LiveMap() {
               : 'bg-card/95 border-border/70 text-muted-foreground hover:text-foreground hover:bg-card'
           }`}
           title={showTraffic ? 'Ocultar tráfico' : 'Mostrar tráfico'}
+          aria-pressed={showTraffic}
         >
-          🚦 {showTraffic ? 'Tráfico' : 'Sin tráfico'}
+          {/* Semaforo SVG */}
+          <svg width="12" height="14" viewBox="0 0 12 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="1" y="1" width="10" height="18" rx="3"/>
+            <circle cx="6" cy="5" r="1.5" fill="currentColor" stroke="none" opacity={showTraffic ? 1 : 0.4}/>
+            <circle cx="6" cy="10" r="1.5" fill="currentColor" stroke="none" opacity={showTraffic ? 1 : 0.4}/>
+            <circle cx="6" cy="15" r="1.5" fill="currentColor" stroke="none" opacity={showTraffic ? 1 : 0.4}/>
+          </svg>
+          {showTraffic ? 'Trafico' : 'Sin trafico'}
         </button>
 
         {/* Badge: conexión en vivo */}

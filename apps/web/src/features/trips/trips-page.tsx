@@ -444,8 +444,8 @@ export function TripsPage() {
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border/50 shrink-0">
         <div>
-          <h1 className="text-lg font-semibold text-foreground">Viajes</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <h1 className="text-2xl font-bold">Viajes</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
             {activeCount} activos · {scheduledCount} programados · {doneCount} completados
           </p>
         </div>

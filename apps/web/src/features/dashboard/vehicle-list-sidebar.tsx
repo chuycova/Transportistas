@@ -244,8 +244,8 @@ export function VehicleListSidebar() {
     <div className="w-[320px] bg-card/80 backdrop-blur-3xl border-r border-border h-full flex flex-col z-10 shadow-[4px_0_24px_-10px_rgba(0,0,0,0.5)] flex-shrink-0">
       {/* Header */}
       <div className="p-6 border-b border-border/50">
-        <h2 className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-          Centro de Control
+        <h2 className="text-2xl font-bold">
+          Mapa de control
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
           {isLoading

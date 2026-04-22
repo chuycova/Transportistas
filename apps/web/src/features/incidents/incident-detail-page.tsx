@@ -178,20 +178,21 @@ export function IncidentDetailPage({ incidentId }: { incidentId: string }) {
   const { data: incident, isLoading, error } = useIncident(incidentId);
 
   if (isLoading) return (
-    <div className="flex items-center justify-center min-h-[50vh] text-muted-foreground gap-2">
+    <div className="flex-1 flex items-center justify-center text-muted-foreground gap-2">
       <RefreshCw className="h-5 w-5 animate-spin" /> Cargando…
     </div>
   );
 
   if (error || !incident) return (
-    <div className="p-6 text-sm text-destructive">
+    <div className="flex-1 p-6 text-sm text-destructive">
       No se encontró el incidente o no tienes acceso.
     </div>
   );
 
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto">
-      {/* Back */}
+    <div className="flex-1 overflow-y-auto bg-background p-6">
+      <div className="flex flex-col gap-6">
+        {/* Back */}
       <Link href="/incidents" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit">
         <ArrowLeft className="h-4 w-4" /> Incidentes
       </Link>
@@ -273,6 +274,7 @@ export function IncidentDetailPage({ incidentId }: { incidentId: string }) {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

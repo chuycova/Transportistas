@@ -11,25 +11,28 @@
 // layout protegido.
 
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Map as MapIcon, Truck, LogOut, Route as RouteIcon, History, Settings, Users, ShieldAlert, Bell, PackagePlus, AlertTriangle } from 'lucide-react';
+import { Map as MapIcon, Truck, LogOut, Route as RouteIcon, History, Settings, Users, ShieldAlert, PackagePlus, AlertTriangle, LayoutDashboard } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SocketInitialize } from '@/features/dashboard/socket-manager';
 import { LiveMap } from '@/features/dashboard/live-map';
 import { VehicleListSidebar } from '@/features/dashboard/vehicle-list-sidebar';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { NotificationBell } from '@/features/notifications/notification-popover';
+import { NotificationToastContainer } from '@/features/notifications/notification-toast';
 
 const NAV_ITEMS = [
-  { href: '/',           icon: MapIcon,    label: 'Mapa en vivo', exact: true },
-  { href: '/vehicles',   icon: Truck,       label: 'Flotilla',     exact: false },
-  { href: '/users',      icon: Users,       label: 'Usuarios',     exact: false },
-  { href: '/routes',     icon: RouteIcon,    label: 'Rutas',        exact: false },
-  { href: '/trips',      icon: PackagePlus, label: 'Viajes',       exact: false },
-  { href: '/historial',  icon: History,     label: 'Historial',    exact: false },
-  { href: '/geofences',  icon: ShieldAlert,   label: 'Geocercas',  exact: false },
-  { href: '/incidents',  icon: AlertTriangle, label: 'Incidentes', exact: false },
+  { href: '/',           icon: LayoutDashboard, label: 'Centro de Control', exact: true  },
+  { href: '/map',        icon: MapIcon,         label: 'Mapa en vivo',      exact: true  },
+  { href: '/vehicles',   icon: Truck,           label: 'Flotilla',          exact: false },
+  { href: '/users',      icon: Users,           label: 'Usuarios',          exact: false },
+  { href: '/routes',     icon: RouteIcon,       label: 'Rutas',             exact: false },
+  { href: '/trips',      icon: PackagePlus,     label: 'Viajes',            exact: false },
+  { href: '/historial',  icon: History,         label: 'Historial',         exact: false },
+  { href: '/geofences',  icon: ShieldAlert,     label: 'Geocercas',         exact: false },
+  { href: '/incidents',  icon: AlertTriangle,   label: 'Incidentes',        exact: false },
 ];
 
 // ─── Hook: badge de notificaciones ───────────────────────────────────────────
@@ -74,6 +77,67 @@ function useUnreadAlertCount(): number {
   return count;
 }
 
+// ─── NavTooltip ───────────────────────────────────────────────────────────────
+// Muestra el label del ítem después de 1s de hover, estilo VSCode.
+// Aparece a la derecha del nav con un slide suave usando transiciones CSS puras.
+
+interface NavTooltipProps {
+  label: string;
+  children: ReactNode;
+}
+
+function NavTooltip({ label, children }: NavTooltipProps) {
+  const [visible, setVisible] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleEnter = () => {
+    timerRef.current = setTimeout(() => setVisible(true), 500);
+  };
+
+  const handleLeave = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    setVisible(false);
+  };
+
+  return (
+    <div
+      className="relative flex items-center"
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
+    >
+      {children}
+
+      {/* Tooltip label — CSS transition, no framer-motion needed */}
+      <div
+        aria-hidden="true"
+        className="absolute left-full ml-3 z-[100] whitespace-nowrap pointer-events-none"
+        style={{
+          opacity: visible ? 1 : 0,
+          transform: visible ? 'translateX(0)' : 'translateX(-6px)',
+          transition: 'opacity 0.14s ease, transform 0.14s ease',
+        }}
+      >
+        {/* Arrow pointing left */}
+        <span
+          className="absolute right-full top-1/2 -translate-y-1/2 border-[5px] border-transparent border-r-border/70"
+          aria-hidden="true"
+        />
+        <span
+          className="absolute right-full top-1/2 -translate-y-1/2 translate-x-px border-[5px] border-transparent border-r-card"
+          aria-hidden="true"
+        />
+
+        <span className="flex items-center rounded-lg border border-border/70 bg-card px-2.5 py-1.5 text-xs font-medium text-foreground shadow-xl shadow-black/10">
+          {label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -81,7 +145,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname      = usePathname();
   const unreadAlerts  = useUnreadAlertCount();
 
-  const isMapPage = pathname === '/';
+  // El mapa persistente es visible solo en /map.
+  // En '/' se muestra el dashboard de resumen (DashboardPage).
+  const isMapPage = pathname === '/map';
 
   return (
     <div className="flex bg-background w-full h-screen overflow-hidden">
@@ -104,67 +170,58 @@ export function AppShell({ children }: { children: ReactNode }) {
         {NAV_ITEMS.map(({ href, icon: Icon, label, exact }) => {
           const isActive = exact ? pathname === href : pathname.startsWith(href);
           return (
-            <Link
-              key={href}
-              href={href}
-              className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
-                isActive
-                  ? 'bg-primary/20 text-primary'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-              title={label}
-              aria-label={label}
-              aria-current={isActive ? 'page' : undefined}
-            >
-              <Icon className="h-5 w-5" />
-            </Link>
+            <NavTooltip key={href} label={label}>
+              <Link
+                href={href}
+                className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
+                  isActive
+                    ? 'bg-primary/20 text-primary'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                }`}
+                aria-label={label}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                <Icon className="h-5 w-5" />
+              </Link>
+            </NavTooltip>
           );
         })}
 
         <div className="flex-1" />
 
-        {/* Notificaciones — con badge de conteo encima de Ajustes */}
-        <Link
-          href="/notifications"
-          className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors mb-1 ${
-            pathname.startsWith('/notifications')
-              ? 'bg-primary/20 text-primary'
-              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-          }`}
-          title="Notificaciones"
-          aria-label="Notificaciones"
-        >
-          <Bell className="h-5 w-5" />
-          {unreadAlerts > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-black text-white leading-none">
-              {unreadAlerts > 9 ? '9+' : unreadAlerts}
-            </span>
-          )}
-        </Link>
+        {/* Notificaciones — hover popover + badge + tooltip */}
+        <NavTooltip label="Notificaciones">
+          <NotificationBell
+            isActive={pathname.startsWith('/notifications')}
+            unreadCount={unreadAlerts}
+          />
+        </NavTooltip>
 
         {/* Ajustes */}
-        <Link
-          href="/settings"
-          className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors mb-2 ${
-            pathname.startsWith('/settings')
-              ? 'bg-primary/20 text-primary'
-              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-          }`}
-          title="Ajustes Generales"
-          aria-label="Ajustes Generales"
-        >
-          <Settings className="h-5 w-5" />
-        </Link>
+        <NavTooltip label="Ajustes generales">
+          <Link
+            href="/settings"
+            className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors mb-2 ${
+              pathname.startsWith('/settings')
+                ? 'bg-primary/20 text-primary'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+            aria-label="Ajustes Generales"
+          >
+            <Settings className="h-5 w-5" />
+          </Link>
+        </NavTooltip>
 
-        <button
-          type="button"
-          onClick={signOut}
-          className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-          title="Cerrar sesión"
-          aria-label="Cerrar sesión"
-        >
-          <LogOut className="h-5 w-5" />
-        </button>
+        <NavTooltip label="Cerrar sesión">
+          <button
+            type="button"
+            onClick={signOut}
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+            aria-label="Cerrar sesión"
+          >
+            <LogOut className="h-5 w-5" />
+          </button>
+        </NavTooltip>
       </nav>
 
       {/* ── Zona de contenido ──────────────────────────────────────────────────
@@ -172,6 +229,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           de "/". Así Google Maps no pierde su instancia, el WebSocket no se
           reconecta y el estado de vehículos se preserva entre navegaciones.
       ────────────────────────────────────────────────────────────────────── */}
+      {/* Toast container — rendered once, fixed position, z-[9999] */}
+      <NotificationToastContainer />
+
       <div className="flex flex-1 overflow-hidden relative">
 
         {/* Dashboard (sidebar + mapa) — siempre montado, visible solo en "/" */}

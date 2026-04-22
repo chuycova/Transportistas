@@ -18,9 +18,10 @@ import {
 import { AssignDriverModal } from './assign-driver-modal';
 
 const STATUS_META: Record<string, { label: string; className: string }> = {
-  active:   { label: 'Activa',    className: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' },
-  inactive: { label: 'Inactiva',  className: 'bg-muted/30 text-muted-foreground border-border' },
-  archived: { label: 'Archivada', className: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
+  active:    { label: 'Activa',      className: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' },
+  inactive:  { label: 'Inactiva',   className: 'bg-muted/30 text-muted-foreground border-border' },
+  archived:  { label: 'Archivada',  className: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
+  completed: { label: 'Completada', className: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
 };
 
 function fmtDistance(m: number | null) {
@@ -489,11 +490,18 @@ export function RoutesPage() {
   const [deleteTarget, setDeleteTarget] = useState<RouteRow | null>(null);
   const [assignTarget, setAssignTarget] = useState<RouteRow | null>(null);
 
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+
   const stats = {
-    total: routes.length,
-    active: routes.filter((r) => r.status === 'active').length,
-    inactive: routes.filter((r) => r.status === 'inactive').length,
+    total:     routes.length,
+    active:    routes.filter((r) => r.status === 'active').length,
+    inactive:  routes.filter((r) => r.status === 'inactive').length,
+    completed: routes.filter((r) => r.status === 'completed').length,
   };
+
+  const filteredRoutes = statusFilter === 'all'
+    ? routes
+    : routes.filter((r) => r.status === statusFilter);
 
   const toggleStatus = (r: RouteRow) =>
     updateStatus.mutate({ id: r.id, status: r.status === 'active' ? 'inactive' : 'active' });
@@ -514,16 +522,45 @@ export function RoutesPage() {
       </div>
 
       {/* Stats */}
-      <div className="mb-6 grid grid-cols-3 gap-4">
+      <div className="mb-4 grid grid-cols-4 gap-3">
         {[
-          { label: 'Total', value: stats.total, color: 'text-foreground' },
-          { label: 'Activas', value: stats.active, color: 'text-emerald-400' },
-          { label: 'Inactivas', value: stats.inactive, color: 'text-muted-foreground' },
+          { label: 'Total',       value: stats.total,     color: 'text-foreground' },
+          { label: 'Activas',     value: stats.active,    color: 'text-emerald-400' },
+          { label: 'Inactivas',   value: stats.inactive,  color: 'text-muted-foreground' },
+          { label: 'Completadas', value: stats.completed, color: 'text-blue-400' },
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-border/50 bg-card/60 p-4">
             <p className="text-xs text-muted-foreground">{s.label}</p>
             <p className={`text-2xl font-bold mt-1 ${s.color}`}>{s.value}</p>
           </div>
+        ))}
+      </div>
+
+      {/* Filtros por estado */}
+      <div className="mb-5 flex gap-1.5">
+        {[
+          { key: 'all',       label: 'Todas' },
+          { key: 'active',    label: 'Activas' },
+          { key: 'inactive',  label: 'Inactivas' },
+          { key: 'completed', label: 'Completadas' },
+        ].map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setStatusFilter(key)}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              statusFilter === key
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted/40 text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+            }`}
+          >
+            {label}
+            {key === 'completed' && stats.completed > 0 && (
+              <span className="ml-1.5 rounded-full bg-blue-500/20 text-blue-400 px-1 text-[10px] font-bold">
+                {stats.completed}
+              </span>
+            )}
+          </button>
         ))}
       </div>
 
@@ -541,10 +578,9 @@ export function RoutesPage() {
 
       {!isLoading && !error && (
         <div>
-          {/* Grid compacto — 3 columnas en pantallas medianas, 2 en sm, 1 en xs */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
             <AnimatePresence>
-              {routes.map((r) => {
+              {filteredRoutes.map((r) => {
                 const meta = STATUS_META[r.status] ?? STATUS_META.inactive;
                 const assignedVehicle  = r.vehicle_id ? vehicleMap[r.vehicle_id] : null;
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -645,13 +681,17 @@ export function RoutesPage() {
             </AnimatePresence>
           </div>
 
-          {routes.length === 0 && (
+          {filteredRoutes.length === 0 && (
             <div className="flex h-48 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/50 text-muted-foreground">
               <Route className="h-8 w-8 opacity-30" />
-              <p className="text-sm">Sin rutas registradas</p>
-              <button type="button" onClick={() => setCreateOpen(true)} className="text-xs text-primary hover:underline">
-                Crear la primera ruta
-              </button>
+              <p className="text-sm">
+                {statusFilter === 'all' ? 'Sin rutas registradas' : `Sin rutas ${STATUS_META[statusFilter]?.label.toLowerCase() ?? statusFilter}s`}
+              </p>
+              {statusFilter === 'all' && (
+                <button type="button" onClick={() => setCreateOpen(true)} className="text-xs text-primary hover:underline">
+                  Crear la primera ruta
+                </button>
+              )}
             </div>
           )}
         </div>
