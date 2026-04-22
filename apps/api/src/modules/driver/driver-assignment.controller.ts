@@ -11,6 +11,25 @@ import { SUPABASE_ADMIN_CLIENT, type SupabaseAdminClient } from '../../infrastru
  * NUNCA se incluyen: polyline_coords completa, datos de otros vehículos,
  * información de otros conductores del tenant.
  */
+interface RouteItem {
+  id: string;
+  name: string;
+  origin_name: string;
+  dest_name: string;
+  status: 'draft' | 'active' | 'archived';
+  total_distance_m: number | null;
+  estimated_duration_s: number | null;
+  deviation_threshold_m: number | null;
+  waypoints: Array<{ lat: number; lng: number }>;
+  stops: Array<{
+    name: string;
+    address: string | null;
+    lat: number;
+    lng: number;
+    order: number;
+  }>;
+}
+
 interface DriverAssignment {
   driver: {
     id: string;
@@ -24,24 +43,10 @@ interface DriverAssignment {
     color: string | null;
     vehicle_type: string;
   } | null;
-  activeRoute: {
-    id: string;
-    name: string;
-    origin_name: string;
-    dest_name: string;
-    total_distance_m: number | null;
-    estimated_duration_s: number | null;
-    deviation_threshold_m: number | null;
-    /** Polyline simplificada para el conductor — solo coordenadas, sin metadatos */
-    waypoints: Array<{ lat: number; lng: number }>;
-    stops: Array<{
-      name: string;
-      address: string | null;
-      lat: number;
-      lng: number;
-      order: number;
-    }>;
-  } | null;
+  /** @deprecated Use routes[] instead. Kept for backwards compat. */
+  activeRoute: RouteItem | null;
+  /** Todas las rutas no archivadas asignadas al vehículo */
+  routes: RouteItem[];
 }
 
 @Controller('driver')
@@ -129,86 +134,100 @@ export class DriverAssignmentController {
         driver: { id: profile.id, full_name: profile.full_name, role: 'driver' },
         vehicle: null,
         activeRoute: null,
+        routes: [],
       };
     }
 
-    // 3. Ruta activa del vehículo (si existe)
-    // Consultamos routes_with_polyline (view) porque expone polyline_coords
-    // como columna — la tabla routes guarda la geometría en formato geography
-    // y el cliente JS no puede leerla directamente.
-    const { data: routeRaw, error: routeError } = await db
+    // 3. Todas las rutas del vehículo (no archivadas)
+    const { data: routesRaw, error: routeError } = await db
       .from('routes_with_polyline')
       .select(`
-        id, name, origin_name, dest_name,
+        id, name, origin_name, dest_name, status,
         total_distance_m, estimated_duration_s, deviation_threshold_m,
         polyline_coords, stops
       `)
       .eq('vehicle_id', vehicle.id)
-      .eq('status', 'active')
-      .maybeSingle();
+      .in('status', ['active', 'draft'])
+      .order('status', { ascending: false }); // active primero
 
-    // Casteamos a unknown primero para evitar el error del tipo generado de Supabase,
-    // que no incluye routes_with_polyline en el schema por defecto.
-    const route = routeRaw as unknown as {
+    type RawRoute = {
       id: string;
       name: string;
       origin_name: string;
       dest_name: string;
+      status: string;
       total_distance_m: number | null;
       estimated_duration_s: number | null;
       deviation_threshold_m: number | null;
       polyline_coords: [number, number][] | null;
       stops: Array<{ name: string; address?: string; lat: number; lng: number; order_index: number }> | null;
-    } | null;
+    };
+
+    const rawList = (routesRaw ?? []) as unknown as RawRoute[];
 
     if (routeError) {
       this.logger.warn(`Route lookup error for vehicle ${vehicle.id}: ${routeError.message}`);
     }
 
-    let activeRoute: DriverAssignment['activeRoute'] = null;
+    // 4. Trips activamente en curso para este conductor.
+    //    Solo excluimos rutas con un viaje en marcha (in_transit o at_destination) —
+    //    así el conductor no puede iniciar la misma ruta dos veces simultáneamente.
+    //    Las rutas completadas NO se excluyen: el supervisor puede reasignarlas
+    //    cuando quiera y el conductor puede volver a hacerlas en cualquier momento.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: blockedTrips } = await (db as any)
+      .from('trips')
+      .select('route_id, status')
+      .eq('driver_id', user.id)
+      .in('status', ['in_transit', 'at_destination']) as { data: Array<{ route_id: string | null; status: string }> | null };
 
-    if (route) {
-      // Convertir polyline_coords [lng, lat][] → { lat, lng }[]
-      // Se entrega simplificada (cada 3er punto) para reducir payload en móvil
+    const blockedRouteIds = new Set(
+      (blockedTrips ?? [])
+        .map((t) => t.route_id)
+        .filter(Boolean) as string[],
+    );
+
+    if (blockedRouteIds.size > 0) {
+      this.logger.log(
+        `Driver ${user.id}: blocked route IDs (trip in progress): ${[...blockedRouteIds].join(', ')}`,
+      );
+    }
+
+
+    const parseRoute = (route: RawRoute): RouteItem => {
       const rawPolyline = (route.polyline_coords ?? []) as [number, number][];
       const waypoints = rawPolyline
-        .filter((_, i) => i % 3 === 0) // simplificar: 1 de cada 3 puntos
+        .filter((_, i) => i % 3 === 0)
         .map(([lng, lat]) => ({ lat, lng }));
-
-      // Paradas ordenadas sin datos internos (sin tenant_id, sin route_id)
-      // route.stops puede llegar como objeto o null desde Supabase JSON — normalizar a array
       const rawStops = Array.isArray(route.stops) ? route.stops : [];
-      const stops = (rawStops as Array<{
-        name: string;
-        address?: string;
-        lat: number;
-        lng: number;
-        order_index: number;
-      }>)
+      const stops = (rawStops as Array<{ name: string; address?: string; lat: number; lng: number; order_index: number }>)
         .sort((a, b) => a.order_index - b.order_index)
-        .map((s) => ({
-          name: s.name,
-          address: s.address ?? null,
-          lat: s.lat,
-          lng: s.lng,
-          order: s.order_index,
-        }));
-
-      activeRoute = {
+        .map((s) => ({ name: s.name, address: s.address ?? null, lat: s.lat, lng: s.lng, order: s.order_index }));
+      return {
         id: route.id,
         name: route.name,
         origin_name: route.origin_name,
         dest_name: route.dest_name,
+        status: route.status as 'draft' | 'active' | 'archived',
         total_distance_m: route.total_distance_m,
         estimated_duration_s: route.estimated_duration_s,
         deviation_threshold_m: route.deviation_threshold_m,
         waypoints,
         stops,
       };
+    };
 
+    // Solo devolver rutas que no están bloqueadas por un trip activo o completado hoy
+    const routes = rawList
+      .filter((r) => !blockedRouteIds.has(r.id))
+      .map(parseRoute);
+
+    const activeRoute = routes.find((r) => r.status === 'active') ?? null;
+
+    if (activeRoute) {
       this.logger.log(
-        `Driver ${user.id} → vehicle ${vehicle.id} → route "${route.name}" ` +
-        `(${waypoints.length} waypts, ${stops.length} stops)`,
+        `Driver ${user.id} → vehicle ${vehicle.id} → ${routes.length} routes ` +
+        `(active: "${activeRoute.name}", ${activeRoute.waypoints.length} waypts)`,
       );
     }
 
@@ -222,6 +241,8 @@ export class DriverAssignmentController {
         vehicle_type: vehicle.vehicle_type,
       },
       activeRoute,
+      routes,
     };
   }
 }
+

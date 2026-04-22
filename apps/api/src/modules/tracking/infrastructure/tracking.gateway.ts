@@ -182,10 +182,13 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   /**
    * Recibe un ping GPS del móvil y lo delega al ProcessLocationUseCase.
    * Evento: `location:ping`
+   * Si el socket no tiene sesión registrada (tracking:start no llegó aún,
+   * p.ej. por reconexión), la registra automáticamente desde el payload para
+   * no perder pings en la ventana de inicio.
    */
   @SubscribeMessage('location:ping')
   onLocationPing(
-    @ConnectedSocket() _client: Socket,
+    @ConnectedSocket() client: Socket,
     @MessageBody() payload: {
       vehicleId: string;
       tenantId: string;
@@ -197,6 +200,10 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       recordedAt: string;
     },
   ) {
+    if (!this.driverSessions.has(client.id) && payload.vehicleId && payload.tenantId) {
+      this.driverSessions.set(client.id, { vehicleId: payload.vehicleId, tenantId: payload.tenantId });
+      this.logger.warn(`location:ping: sesión auto-registrada para socket ${client.id} (vehicleId=${payload.vehicleId})`);
+    }
     this.processPingFn?.(payload);
   }
 
