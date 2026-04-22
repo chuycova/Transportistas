@@ -7,6 +7,7 @@
 
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useTheme } from '@lib/ThemeContext';
 import { HistoryScreen }      from '../screens/HistoryScreen';
 import { RouteDetailScreen }  from '../screens/RouteDetailScreen';
 import { AlertDetailScreen }  from '../screens/AlertDetailScreen';
@@ -31,17 +32,19 @@ export type HistoryStackParamList = {
 
 const Stack = createNativeStackNavigator<HistoryStackParamList>();
 
-const HEADER_OPTS = {
-  headerStyle:       { backgroundColor: '#12121C' },
-  headerTintColor:   '#FFFFFF',
-  headerTitleStyle:  { fontWeight: '600' as const },
-  headerShadowVisible: false,
-  headerBackTitle:   'Volver',
-} as const;
-
 export function HistoryNavigator() {
+  const { colors } = useTheme();
+
+  const headerOpts = {
+    headerStyle:       { backgroundColor: colors.surface },
+    headerTintColor:   colors.text,
+    headerTitleStyle:  { fontWeight: '600' as const, color: colors.text },
+    headerShadowVisible: false,
+    headerBackTitle:   'Volver',
+  } as const;
+
   return (
-    <Stack.Navigator screenOptions={HEADER_OPTS}>
+    <Stack.Navigator screenOptions={headerOpts}>
       <Stack.Screen
         name="HistoryMain"
         component={HistoryScreen}

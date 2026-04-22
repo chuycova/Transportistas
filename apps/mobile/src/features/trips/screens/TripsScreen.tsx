@@ -1,7 +1,5 @@
 // ─── TripsScreen.tsx ──────────────────────────────────────────────────────────
 // Pantalla principal de Viajes para el conductor.
-// Muestra el viaje activo (confirmed/in_transit/at_destination) y el historial.
-// El conductor puede iniciar su viaje desde aquí e ir al mapa.
 
 import React, { useCallback } from 'react';
 import {
@@ -14,7 +12,8 @@ import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTrips, updateTripStatus, type DriverTrip, type TripStatus } from '../hooks/useTrips';
-import { setStr } from '@lib/mmkv';
+import { useTheme } from '@lib/ThemeContext';
+import { setStr, storage } from '@lib/mmkv';
 import { MMKV_KEYS } from '@lib/constants';
 import type { RootStackParamList } from '@navigation/RootNavigator';
 import type { MainTabParamList } from '@navigation/MainTabNavigator';
@@ -74,7 +73,6 @@ function ActiveTripCard({
   onStart,
   onAtDestination,
   onComplete,
-  onRefresh,
 }: {
   trip: DriverTrip;
   onStart: () => void;
@@ -82,11 +80,12 @@ function ActiveTripCard({
   onComplete: () => void;
   onRefresh: () => void;
 }) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.activeCard}>
+    <View style={[styles.activeCard, { backgroundColor: colors.surface, borderColor: colors.accent + '44' }]}>
       {/* Header */}
       <View style={styles.cardHeader}>
-        <Text style={styles.tripCode}>{trip.code}</Text>
+        <Text style={[styles.tripCode, { color: colors.textSecondary }]}>{trip.code}</Text>
         <StatusBadge status={trip.status} />
       </View>
 
@@ -94,34 +93,34 @@ function ActiveTripCard({
       <View style={styles.routeSection}>
         <View style={styles.routePoint}>
           <View style={[styles.routeDot, { backgroundColor: '#22C55E' }]} />
-          <Text style={styles.routePointText} numberOfLines={1}>{trip.origin_name}</Text>
+          <Text style={[styles.routePointText, { color: colors.text }]} numberOfLines={1}>{trip.origin_name}</Text>
         </View>
-        <View style={styles.routeLine} />
+        <View style={[styles.routeLine, { backgroundColor: colors.border }]} />
         <View style={styles.routePoint}>
           <View style={[styles.routeDot, { backgroundColor: '#EF4444' }]} />
-          <Text style={styles.routePointText} numberOfLines={1}>{trip.dest_name}</Text>
+          <Text style={[styles.routePointText, { color: colors.text }]} numberOfLines={1}>{trip.dest_name}</Text>
         </View>
       </View>
 
       {/* Métricas */}
       {(trip.estimated_distance_km || trip.estimated_duration_min || trip.scheduled_at) && (
-        <View style={styles.metricsRow}>
+        <View style={[styles.metricsRow, { backgroundColor: colors.surfaceAlt }]}>
           {fmtDistance(trip.estimated_distance_km) && (
             <View style={styles.metric}>
-              <Text style={styles.metricValue}>{fmtDistance(trip.estimated_distance_km)}</Text>
-              <Text style={styles.metricLabel}>distancia</Text>
+              <Text style={[styles.metricValue, { color: colors.text }]}>{fmtDistance(trip.estimated_distance_km)}</Text>
+              <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>distancia</Text>
             </View>
           )}
           {fmtDuration(trip.estimated_duration_min) && (
             <View style={styles.metric}>
-              <Text style={styles.metricValue}>{fmtDuration(trip.estimated_duration_min)}</Text>
-              <Text style={styles.metricLabel}>estimado</Text>
+              <Text style={[styles.metricValue, { color: colors.text }]}>{fmtDuration(trip.estimated_duration_min)}</Text>
+              <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>estimado</Text>
             </View>
           )}
           {fmtDate(trip.scheduled_at) && (
             <View style={styles.metric}>
-              <Text style={styles.metricValue}>{fmtDate(trip.scheduled_at)}</Text>
-              <Text style={styles.metricLabel}>programado</Text>
+              <Text style={[styles.metricValue, { color: colors.text }]}>{fmtDate(trip.scheduled_at)}</Text>
+              <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>programado</Text>
             </View>
           )}
         </View>
@@ -129,16 +128,16 @@ function ActiveTripCard({
 
       {/* Carga */}
       {trip.cargo_type && (
-        <View style={styles.cargoChip}>
-          <Text style={styles.cargoText}>📦 {trip.cargo_type}{trip.weight_tons ? ` · ${trip.weight_tons} ton` : ''}</Text>
+        <View style={[styles.cargoChip, { backgroundColor: colors.surfaceAlt }]}>
+          <Text style={[styles.cargoText, { color: colors.textSecondary }]}>📦 {trip.cargo_type}{trip.weight_tons ? ` · ${trip.weight_tons} ton` : ''}</Text>
         </View>
       )}
 
-      <View style={styles.divider} />
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
       {/* Acciones según estado */}
       {trip.status === 'confirmed' && (
-        <TouchableOpacity style={styles.primaryBtn} onPress={onStart}>
+        <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.accent }]} onPress={onStart}>
           <Text style={styles.primaryBtnText}>▶  Iniciar viaje</Text>
         </TouchableOpacity>
       )}
@@ -159,15 +158,16 @@ function ActiveTripCard({
 // ─── Item de historial ────────────────────────────────────────────────────────
 
 function PastTripItem({ trip }: { trip: DriverTrip }) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.pastItem}>
+    <View style={[styles.pastItem, { backgroundColor: colors.surface }]}>
       <View style={styles.pastItemLeft}>
-        <Text style={styles.pastCode}>{trip.code}</Text>
-        <Text style={styles.pastRoute} numberOfLines={1}>
+        <Text style={[styles.pastCode, { color: colors.textSecondary }]}>{trip.code}</Text>
+        <Text style={[styles.pastRoute, { color: colors.text }]} numberOfLines={1}>
           {trip.origin_name} → {trip.dest_name}
         </Text>
         {fmtDate(trip.completed_at ?? trip.started_at) && (
-          <Text style={styles.pastDate}>{fmtDate(trip.completed_at ?? trip.started_at)}</Text>
+          <Text style={[styles.pastDate, { color: colors.textMuted }]}>{fmtDate(trip.completed_at ?? trip.started_at)}</Text>
         )}
       </View>
       <StatusBadge status={trip.status} />
@@ -181,6 +181,7 @@ export function TripsScreen() {
   const navigation = useNavigation<NavProp>();
   const { activeTrip, pastTrips, loading, error, refetch } = useTrips();
   const [refreshing, setRefreshing] = React.useState(false);
+  const { colors } = useTheme();
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -194,10 +195,8 @@ export function TripsScreen() {
       await updateTripStatus(activeTrip.id, 'in_transit', {
         started_at: new Date().toISOString(),
       });
-      // Guardar trip_id en MMKV para que el GPS tracking lo asocie
       setStr(MMKV_KEYS.ACTIVE_TRIP_ID, activeTrip.id);
       if (activeTrip.route_id) setStr(MMKV_KEYS.ACTIVE_ROUTE_ID, activeTrip.route_id);
-      // Ir al tab Mapa
       navigation.navigate('Map');
     } catch (e) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Error al iniciar viaje');
@@ -228,6 +227,9 @@ export function TripsScreen() {
               await updateTripStatus(activeTrip.id, 'completed', {
                 completed_at: new Date().toISOString(),
               });
+              // Limpiar el trip activo del MMKV para que la ruta
+              // ya no aparezca como disponible para iniciar de nuevo
+              storage.delete(MMKV_KEYS.ACTIVE_TRIP_ID);
               void refetch();
             } catch (e) {
               Alert.alert('Error', e instanceof Error ? e.message : 'Error al completar viaje');
@@ -240,20 +242,20 @@ export function TripsScreen() {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#6C63FF" />
-        <Text style={styles.loadingText}>Cargando viajes...</Text>
+      <View style={[styles.centered, { backgroundColor: colors.bg }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Cargando viajes...</Text>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, { backgroundColor: colors.bg }]}>
         <Text style={styles.errorIcon}>⚠️</Text>
-        <Text style={styles.errorText}>{error}</Text>
+        <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
         <TouchableOpacity
-          style={styles.retryBtn}
+          style={[styles.retryBtn, { backgroundColor: colors.accent }]}
           onPress={() => { void refetch(); }}
         >
           <Text style={styles.retryText}>Reintentar</Text>
@@ -264,20 +266,20 @@ export function TripsScreen() {
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.scrollContent}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
           onRefresh={() => { void handleRefresh(); }}
-          tintColor="#6C63FF"
+          tintColor={colors.accent}
         />
       }
     >
       {/* ── Viaje activo ── */}
       {activeTrip ? (
         <>
-          <Text style={styles.sectionTitle}>VIAJE ACTIVO</Text>
+          <Text style={[styles.sectionTitle, { color: colors.accent }]}>VIAJE ACTIVO</Text>
           <ActiveTripCard
             trip={activeTrip}
             onStart={() => { void handleStart(); }}
@@ -289,8 +291,8 @@ export function TripsScreen() {
       ) : (
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>🚚</Text>
-          <Text style={styles.emptyTitle}>Sin viaje activo</Text>
-          <Text style={styles.emptySub}>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Sin viaje activo</Text>
+          <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
             Tu supervisor aún no te ha asignado un viaje.{'\n'}
             Cuando se confirme uno aparecerá aquí.
           </Text>
@@ -300,8 +302,8 @@ export function TripsScreen() {
       {/* ── Historial ── */}
       {pastTrips.length > 0 && (
         <>
-          <Text style={[styles.sectionTitle, { marginTop: 28 }]}>HISTORIAL</Text>
-          <View style={styles.pastList}>
+          <Text style={[styles.sectionTitle, { marginTop: 28, color: colors.accent }]}>HISTORIAL</Text>
+          <View style={[styles.pastList, { borderColor: colors.border }]}>
             {pastTrips.map((trip) => (
               <PastTripItem key={trip.id} trip={trip} />
             ))}
@@ -315,19 +317,19 @@ export function TripsScreen() {
 // ─── Estilos ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container:     { flex: 1, backgroundColor: '#0A0A0F' },
+  container:     { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
-  centered:      { flex: 1, backgroundColor: '#0A0A0F', justifyContent: 'center', alignItems: 'center', gap: 12, padding: 24 },
+  centered:      { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 24 },
 
-  sectionTitle: { color: '#6C63FF', fontSize: 10, letterSpacing: 1.5, fontWeight: '700', marginBottom: 10 },
+  sectionTitle: { fontSize: 10, letterSpacing: 1.5, fontWeight: '700', marginBottom: 10 },
 
   // Tarjeta de viaje activo
   activeCard: {
-    backgroundColor: '#12121C', borderRadius: 20,
-    padding: 20, borderWidth: 1, borderColor: '#6C63FF44',
+    borderRadius: 20,
+    padding: 20, borderWidth: 1,
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  tripCode:   { color: '#8888AA', fontSize: 12, fontFamily: 'monospace', fontWeight: '600' },
+  tripCode:   { fontSize: 12, fontFamily: 'monospace', fontWeight: '600' },
 
   badge:     { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   badgeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
@@ -335,20 +337,20 @@ const styles = StyleSheet.create({
   routeSection: { gap: 4, marginBottom: 14 },
   routePoint:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
   routeDot:     { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  routeLine:    { width: 1, height: 16, backgroundColor: '#2A2A3F', marginLeft: 3.5 },
-  routePointText: { color: '#CCCCDD', fontSize: 14, flex: 1 },
+  routeLine:    { width: 1, height: 16, marginLeft: 3.5 },
+  routePointText: { fontSize: 14, flex: 1 },
 
-  metricsRow: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: '#0A0A0F', borderRadius: 12, padding: 12, marginBottom: 12 },
+  metricsRow: { flexDirection: 'row', justifyContent: 'space-around', borderRadius: 12, padding: 12, marginBottom: 12 },
   metric:      { alignItems: 'center' },
-  metricValue: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  metricLabel: { color: '#8888AA', fontSize: 10, marginTop: 2 },
+  metricValue: { fontSize: 14, fontWeight: '700' },
+  metricLabel: { fontSize: 10, marginTop: 2 },
 
-  cargoChip: { backgroundColor: '#1A1A2E', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 12, alignSelf: 'flex-start' },
-  cargoText: { color: '#AAAACC', fontSize: 12 },
+  cargoChip: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 12, alignSelf: 'flex-start' },
+  cargoText: { fontSize: 12 },
 
-  divider: { height: 1, backgroundColor: '#2A2A3F', marginBottom: 16 },
+  divider: { height: 1, marginBottom: 16 },
 
-  primaryBtn:   { backgroundColor: '#6C63FF', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  primaryBtn:   { borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   cyanBtn:      { backgroundColor: '#0891B2' },
   greenBtn:     { backgroundColor: '#16A34A' },
   primaryBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
@@ -356,24 +358,24 @@ const styles = StyleSheet.create({
   // Estado vacío
   emptyState: { alignItems: 'center', paddingTop: 40, gap: 12 },
   emptyIcon:  { fontSize: 56 },
-  emptyTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
-  emptySub:   { color: '#8888AA', fontSize: 14, textAlign: 'center', lineHeight: 20, maxWidth: 280 },
+  emptyTitle: { fontSize: 18, fontWeight: '700' },
+  emptySub:   { fontSize: 14, textAlign: 'center', lineHeight: 20, maxWidth: 280 },
 
   // Historial
-  pastList: { gap: 1, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: '#2A2A3F' },
+  pastList: { gap: 1, borderRadius: 14, overflow: 'hidden', borderWidth: 1 },
   pastItem: {
-    backgroundColor: '#12121C', padding: 14,
+    padding: 14,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
   },
   pastItemLeft: { flex: 1, gap: 2 },
-  pastCode:  { color: '#8888AA', fontSize: 11, fontFamily: 'monospace' },
-  pastRoute: { color: '#CCCCDD', fontSize: 13, fontWeight: '500' },
-  pastDate:  { color: '#666680', fontSize: 11 },
+  pastCode:  { fontSize: 11, fontFamily: 'monospace' },
+  pastRoute: { fontSize: 13, fontWeight: '500' },
+  pastDate:  { fontSize: 11 },
 
   // Utilidades
-  loadingText: { color: '#8888AA', marginTop: 12, fontSize: 14 },
+  loadingText: { marginTop: 12, fontSize: 14 },
   errorIcon:   { fontSize: 40 },
-  errorText:   { color: '#FF6B6B', textAlign: 'center', fontSize: 14, maxWidth: 260 },
-  retryBtn:    { backgroundColor: '#6C63FF', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12 },
+  errorText:   { textAlign: 'center', fontSize: 14, maxWidth: 260 },
+  retryBtn:    { borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12 },
   retryText:   { color: '#fff', fontWeight: '600' },
 });

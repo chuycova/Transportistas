@@ -69,9 +69,6 @@ const rowStyles = StyleSheet.create({
 export function GeneralSettingsScreen() {
   const { isDark, colors, toggleTheme } = useTheme();
 
-  const sectionBg    = { backgroundColor: colors.surface, borderColor: colors.border };
-  const sectionTitle = { color: colors.textSecondary };
-
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
       <ScrollView
@@ -80,10 +77,10 @@ export function GeneralSettingsScreen() {
       >
 
         {/* ── Sección: Apariencia ── */}
-        <Text style={[styles.sectionTitle, sectionTitle]}>APARIENCIA</Text>
-        <View style={[styles.section, sectionBg]}>
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>APARIENCIA</Text>
+        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <SettingRow
-            icon="🌙"
+            icon={isDark ? '🌙' : '☀️'}
             label="Tema oscuro"
             description={isDark ? 'Modo oscuro activado' : 'Modo claro activado'}
             colors={colors}
@@ -118,8 +115,8 @@ export function GeneralSettingsScreen() {
         </View>
 
         {/* ── Sección: Sobre la app ── */}
-        <Text style={[styles.sectionTitle, sectionTitle]}>INFORMACIÓN</Text>
-        <View style={[styles.section, sectionBg]}>
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>INFORMACIÓN</Text>
+        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <SettingRow
             icon="📱"
             label="Versión"

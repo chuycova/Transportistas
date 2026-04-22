@@ -16,7 +16,8 @@ import { Q } from '@nozbe/watermelondb';
 import { database, markPingSynced } from '@lib/database';
 import type { GpsPing } from '@lib/database/models/GpsPing.model';
 import { emitLocationPing, isSocketConnected, onSocketReconnect } from '@lib/socket';
-import { API_URL } from '@lib/constants';
+import { API_URL, MMKV_KEYS } from '@lib/constants';
+import { getBool } from '@lib/mmkv';
 import { supabase } from '@lib/supabase';
 
 const BATCH_SIZE = 50;
@@ -25,6 +26,9 @@ export function usePingSync() {
   const isSyncing = useRef(false);
 
   const drainQueue = useCallback(async () => {
+    // No drena si el tracking está inactivo: evita que pings offline lleguen
+    // al servidor después de detener el viaje y hagan parecer que sigue activo.
+    if (!getBool(MMKV_KEYS.TRACKING_ACTIVE)) return;
     if (isSyncing.current) return;
     isSyncing.current = true;
 

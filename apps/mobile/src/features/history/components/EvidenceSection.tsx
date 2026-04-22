@@ -1,16 +1,12 @@
 // ─── EvidenceSection.tsx ──────────────────────────────────────────────────────
-// Sección reutilizable para adjuntar evidencia (fotos, videos, archivos) a una
-// ruta o alerta. La subida real requiere Supabase Storage + expo-image-picker.
-//
-// Para activar los pickers reales, instalar:
-//   npx expo install expo-image-picker expo-document-picker
-// y descomentar las importaciones y llamadas correspondientes.
+// Sección reutilizable para adjuntar evidencia (fotos, videos, archivos).
 
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Alert, ScrollView, Image,
 } from 'react-native';
+import { useTheme } from '@lib/ThemeContext';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 export type EvidenceItem = {
@@ -20,9 +16,6 @@ export type EvidenceItem = {
   name: string;
 };
 
-// ─── Picker simulado ──────────────────────────────────────────────────────────
-// Devuelve un ítem de placeholder. Reemplazar por expo-image-picker cuando
-// se tenga Supabase Storage configurado.
 function simulatePick(source: 'camera' | 'gallery' | 'file'): EvidenceItem {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   if (source === 'file') {
@@ -31,24 +24,20 @@ function simulatePick(source: 'camera' | 'gallery' | 'file'): EvidenceItem {
   return {
     id,
     type: 'image',
-    // URI de placeholder (imagen pública de prueba)
     uri: `https://picsum.photos/seed/${id}/300/200`,
     name: `foto_${id.slice(0, 6)}.jpg`,
   };
 }
 
-// ─── Componente ───────────────────────────────────────────────────────────────
 interface Props {
-  contextLabel: string; // "esta ruta" | "esta alerta"
+  contextLabel: string;
 }
 
 export function EvidenceSection({ contextLabel }: Props) {
   const [items, setItems] = useState<EvidenceItem[]>([]);
+  const { colors } = useTheme();
 
   const addItem = (source: 'camera' | 'gallery' | 'file') => {
-    // TODO: cuando expo-image-picker esté instalado, usar:
-    //   const result = await ImagePicker.launchCameraAsync({ ... })
-    //   if (!result.canceled) setItems(prev => [...prev, mapResult(result)])
     const item = simulatePick(source);
     setItems((prev) => [...prev, item]);
   };
@@ -62,18 +51,9 @@ export function EvidenceSection({ contextLabel }: Props) {
       'Agregar evidencia',
       `Adjunta una prueba a ${contextLabel}`,
       [
-        {
-          text: '📷  Cámara',
-          onPress: () => addItem('camera'),
-        },
-        {
-          text: '🖼️  Galería',
-          onPress: () => addItem('gallery'),
-        },
-        {
-          text: '📄  Archivo',
-          onPress: () => addItem('file'),
-        },
+        { text: '📷  Cámara',  onPress: () => addItem('camera') },
+        { text: '🖼️  Galería', onPress: () => addItem('gallery') },
+        { text: '📄  Archivo', onPress: () => addItem('file') },
         { text: 'Cancelar', style: 'cancel' },
       ],
     );
@@ -91,21 +71,31 @@ export function EvidenceSection({ contextLabel }: Props) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.surface, borderColor: colors.border }]}>
 
       {/* ── Encabezado ── */}
       <View style={styles.header}>
-        <Text style={styles.title}>Evidencia</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={handleAdd} activeOpacity={0.8}>
-          <Text style={styles.addBtnText}>+ Agregar</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Evidencia</Text>
+        <TouchableOpacity
+          style={[styles.addBtn, { backgroundColor: colors.accent + '22', borderColor: colors.accent + '55' }]}
+          onPress={handleAdd}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.addBtnText, { color: colors.accent }]}>+ Agregar</Text>
         </TouchableOpacity>
       </View>
 
       {/* ── Grid de archivos ── */}
       {items.length === 0 ? (
-        <TouchableOpacity style={styles.emptyBox} onPress={handleAdd} activeOpacity={0.75}>
+        <TouchableOpacity
+          style={[styles.emptyBox, { borderColor: colors.border, backgroundColor: colors.bg }]}
+          onPress={handleAdd}
+          activeOpacity={0.75}
+        >
           <Text style={styles.emptyIcon}>📁</Text>
-          <Text style={styles.emptyText}>Toca para adjuntar fotos, videos o archivos</Text>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            Toca para adjuntar fotos, videos o archivos
+          </Text>
         </TouchableOpacity>
       ) : (
         <ScrollView
@@ -116,15 +106,14 @@ export function EvidenceSection({ contextLabel }: Props) {
           {items.map((item) => (
             <View key={item.id} style={styles.thumb}>
               {item.type === 'image' && item.uri ? (
-                <Image source={{ uri: item.uri }} style={styles.thumbImage} resizeMode="cover" />
+                <Image source={{ uri: item.uri }} style={[styles.thumbImage, { backgroundColor: colors.surfaceAlt }]} resizeMode="cover" />
               ) : (
-                <View style={styles.thumbFile}>
+                <View style={[styles.thumbFile, { backgroundColor: colors.surfaceAlt }]}>
                   <Text style={styles.thumbFileIcon}>
                     {item.type === 'video' ? '🎬' : '📄'}
                   </Text>
                 </View>
               )}
-              {/* Botón eliminar */}
               <TouchableOpacity
                 style={styles.removeBtn}
                 onPress={() => removeItem(item.id)}
@@ -132,21 +121,27 @@ export function EvidenceSection({ contextLabel }: Props) {
               >
                 <Text style={styles.removeBtnText}>✕</Text>
               </TouchableOpacity>
-              {/* Nombre */}
-              <Text style={styles.thumbName} numberOfLines={1}>{item.name}</Text>
+              <Text style={[styles.thumbName, { color: colors.textSecondary }]} numberOfLines={1}>{item.name}</Text>
             </View>
           ))}
 
-          {/* Botón "+" al final del grid */}
-          <TouchableOpacity style={styles.addThumb} onPress={handleAdd} activeOpacity={0.75}>
-            <Text style={styles.addThumbIcon}>+</Text>
+          <TouchableOpacity
+            style={[styles.addThumb, { borderColor: colors.border, backgroundColor: colors.bg }]}
+            onPress={handleAdd}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.addThumbIcon, { color: colors.accent }]}>+</Text>
           </TouchableOpacity>
         </ScrollView>
       )}
 
       {/* ── Acción guardar ── */}
       {items.length > 0 && (
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={[styles.saveBtn, { backgroundColor: colors.accent }]}
+          onPress={handleSave}
+          activeOpacity={0.85}
+        >
           <Text style={styles.saveBtnText}>
             Guardar evidencia ({items.length})
           </Text>
@@ -156,17 +151,13 @@ export function EvidenceSection({ contextLabel }: Props) {
   );
 }
 
-// ─── Estilos ──────────────────────────────────────────────────────────────────
-
 const THUMB_SIZE = 100;
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#12121C',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#2A2A3F',
     gap: 12,
   },
   header: {
@@ -175,45 +166,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
   },
   addBtn: {
-    backgroundColor: '#6C63FF22',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: '#6C63FF55',
   },
   addBtnText: {
-    color: '#6C63FF',
     fontSize: 13,
     fontWeight: '600',
   },
-
-  // Estado vacío
   emptyBox: {
     height: 90,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#2A2A3F',
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#0A0A0F',
   },
   emptyIcon: { fontSize: 28 },
   emptyText: {
-    color: '#8888AA',
     fontSize: 12,
     textAlign: 'center',
     maxWidth: 220,
   },
-
-  // Grid horizontal
   grid: {
     gap: 10,
     paddingVertical: 4,
@@ -227,19 +207,16 @@ const styles = StyleSheet.create({
     width: THUMB_SIZE,
     height: THUMB_SIZE,
     borderRadius: 10,
-    backgroundColor: '#1C1C2E',
   },
   thumbFile: {
     width: THUMB_SIZE,
     height: THUMB_SIZE,
     borderRadius: 10,
-    backgroundColor: '#1C1C2E',
     alignItems: 'center',
     justifyContent: 'center',
   },
   thumbFileIcon: { fontSize: 32 },
   thumbName: {
-    color: '#8888AA',
     fontSize: 10,
     textAlign: 'center',
   },
@@ -264,21 +241,15 @@ const styles = StyleSheet.create({
     height: THUMB_SIZE,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#2A2A3F',
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0A0A0F',
   },
   addThumbIcon: {
-    color: '#6C63FF',
     fontSize: 28,
     fontWeight: '300',
   },
-
-  // Botón guardar
   saveBtn: {
-    backgroundColor: '#6C63FF',
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',

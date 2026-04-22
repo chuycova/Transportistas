@@ -1,7 +1,6 @@
 // ─── HistoryScreen.tsx ────────────────────────────────────────────────────────
 // Pantalla principal de Historial.
 // Dos secciones: Rutas realizadas | Alertas activadas
-// Cada ítem es navegable al detalle donde se puede adjuntar evidencia.
 
 import React, { useState } from 'react';
 import {
@@ -13,6 +12,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAlertHistory } from '../hooks/useAlertHistory';
 import type { AlertHistoryItem } from '../hooks/useAlertHistory';
 import { useTrips } from '@features/trips/hooks/useTrips';
+import { useTheme } from '@lib/ThemeContext';
 import type { HistoryStackParamList, HistoryRoute } from '../navigation/HistoryNavigator';
 
 type Nav = NativeStackNavigationProp<HistoryStackParamList, 'HistoryMain'>;
@@ -62,23 +62,26 @@ function alertMeta(type: string) {
 }
 
 function formatDate(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+  return new Date(iso).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function formatTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  return new Date(iso).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
 }
 
 // ─── Sub-componentes ──────────────────────────────────────────────────────────
 
 function RouteRow({ item, onPress }: { item: HistoryRoute; onPress: () => void }) {
+  const { colors } = useTheme();
   const isOff = item.status === 'off_route';
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.75}>
+    <TouchableOpacity
+      style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
+      onPress={onPress}
+      activeOpacity={0.75}
+    >
       <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle} numberOfLines={1}>{item.routeName}</Text>
+        <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{item.routeName}</Text>
         <View style={[styles.badge, isOff ? styles.badgeWarn : styles.badgeOk]}>
           <Text style={[styles.badgeText, isOff && styles.badgeTextWarn]}>
             {isOff ? 'Desvío' : 'Completada'}
@@ -86,30 +89,35 @@ function RouteRow({ item, onPress }: { item: HistoryRoute; onPress: () => void }
         </View>
       </View>
       <View style={styles.cardMeta}>
-        <Text style={styles.metaItem}>📅 {item.date}</Text>
-        <Text style={styles.metaItem}>⏱ {item.duration}</Text>
-        <Text style={styles.metaItem}>📍 {item.distance}</Text>
+        <Text style={[styles.metaItem, { color: colors.textSecondary }]}>📅 {item.date}</Text>
+        <Text style={[styles.metaItem, { color: colors.textSecondary }]}>⏱ {item.duration}</Text>
+        <Text style={[styles.metaItem, { color: colors.textSecondary }]}>📍 {item.distance}</Text>
       </View>
-      <View style={styles.cardFooter}>
-        <Text style={styles.evidenceHint}>Toca para ver detalle o adjuntar evidencia</Text>
-        <Text style={styles.chevron}>›</Text>
+      <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
+        <Text style={[styles.evidenceHint, { color: colors.accent }]}>Toca para ver detalle o adjuntar evidencia</Text>
+        <Text style={[styles.chevron, { color: colors.accent }]}>›</Text>
       </View>
     </TouchableOpacity>
   );
 }
 
 function AlertRow({ item, onPress }: { item: AlertHistoryItem; onPress: () => void }) {
+  const { colors } = useTheme();
   const meta = alertMeta(item.alertType);
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.75}>
+    <TouchableOpacity
+      style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
+      onPress={onPress}
+      activeOpacity={0.75}
+    >
       <View style={styles.cardHeader}>
-        <View style={styles.alertIconWrapper}>
+        <View style={[styles.alertIconWrapper, { backgroundColor: colors.surfaceAlt }]}>
           <Text style={styles.alertIcon}>{meta.icon}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>{meta.label}</Text>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>{meta.label}</Text>
           {item.routeName ? (
-            <Text style={styles.subRoute} numberOfLines={1}>Ruta: {item.routeName}</Text>
+            <Text style={[styles.subRoute, { color: colors.textSecondary }]} numberOfLines={1}>Ruta: {item.routeName}</Text>
           ) : null}
         </View>
         <View style={[styles.badge, { backgroundColor: `${meta.color}22` }]}>
@@ -119,23 +127,24 @@ function AlertRow({ item, onPress }: { item: AlertHistoryItem; onPress: () => vo
         </View>
       </View>
       <View style={styles.cardMeta}>
-        <Text style={styles.metaItem}>📅 {formatDate(item.createdAt)}</Text>
-        <Text style={styles.metaItem}>🕐 {formatTime(item.createdAt)}</Text>
+        <Text style={[styles.metaItem, { color: colors.textSecondary }]}>📅 {formatDate(item.createdAt)}</Text>
+        <Text style={[styles.metaItem, { color: colors.textSecondary }]}>🕐 {formatTime(item.createdAt)}</Text>
         {item.isResolved && <Text style={[styles.metaItem, { color: '#22C55E' }]}>✓ Atendida</Text>}
       </View>
-      <View style={styles.cardFooter}>
-        <Text style={styles.evidenceHint}>Toca para ver detalle o adjuntar evidencia</Text>
-        <Text style={styles.chevron}>›</Text>
+      <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
+        <Text style={[styles.evidenceHint, { color: colors.accent }]}>Toca para ver detalle o adjuntar evidencia</Text>
+        <Text style={[styles.chevron, { color: colors.accent }]}>›</Text>
       </View>
     </TouchableOpacity>
   );
 }
 
 function EmptyState({ message }: { message: string }) {
+  const { colors } = useTheme();
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyIcon}>📭</Text>
-      <Text style={styles.emptyText}>{message}</Text>
+      <Text style={[styles.emptyText, { color: colors.textSecondary }]}>{message}</Text>
     </View>
   );
 }
@@ -151,6 +160,7 @@ export function HistoryScreen() {
   const { pastTrips, loading: tripsLoading, refetch: refetchTrips } = useTrips();
   const historyRoutes = pastTrips.map(tripToHistoryRoute);
   const [refreshing, setRefreshing] = useState(false);
+  const { colors } = useTheme();
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -159,25 +169,25 @@ export function HistoryScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bg }]}>
 
       {/* ── Selector de pestaña ── */}
-      <View style={styles.segmentWrapper}>
+      <View style={[styles.segmentWrapper, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <TouchableOpacity
-          style={[styles.segment, activeTab === 'routes' && styles.segmentActive]}
+          style={[styles.segment, activeTab === 'routes' && [styles.segmentActive, { backgroundColor: colors.accent }]]}
           onPress={() => setActiveTab('routes')}
           activeOpacity={0.8}
         >
-          <Text style={[styles.segmentText, activeTab === 'routes' && styles.segmentTextActive]}>
+          <Text style={[styles.segmentText, { color: activeTab === 'routes' ? '#FFFFFF' : colors.textSecondary }]}>
             Rutas
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.segment, activeTab === 'alerts' && styles.segmentActive]}
+          style={[styles.segment, activeTab === 'alerts' && [styles.segmentActive, { backgroundColor: colors.accent }]]}
           onPress={() => setActiveTab('alerts')}
           activeOpacity={0.8}
         >
-          <Text style={[styles.segmentText, activeTab === 'alerts' && styles.segmentTextActive]}>
+          <Text style={[styles.segmentText, { color: activeTab === 'alerts' ? '#FFFFFF' : colors.textSecondary }]}>
             Alertas
           </Text>
         </TouchableOpacity>
@@ -193,7 +203,7 @@ export function HistoryScreen() {
             <RefreshControl
               refreshing={refreshing || tripsLoading}
               onRefresh={() => { void onRefresh(); }}
-              tintColor="#6C63FF"
+              tintColor={colors.accent}
             />
           }
           ListEmptyComponent={
@@ -220,7 +230,7 @@ export function HistoryScreen() {
             <RefreshControl
               refreshing={refreshing || alertsLoading}
               onRefresh={() => { void onRefresh(); }}
-              tintColor="#6C63FF"
+              tintColor={colors.accent}
             />
           }
           ListEmptyComponent={
@@ -243,19 +253,13 @@ export function HistoryScreen() {
 // ─── Estilos ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0A0A0F',
-  },
+  container: { flex: 1 },
 
-  // Segmented control
   segmentWrapper: {
     flexDirection: 'row',
     margin: 16,
-    backgroundColor: '#12121C',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#2A2A3F',
     padding: 4,
   },
   segment: {
@@ -264,28 +268,18 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     alignItems: 'center',
   },
-  segmentActive: {
-    backgroundColor: '#6C63FF',
-  },
+  segmentActive: {},
   segmentText: {
-    color: '#8888AA',
     fontSize: 13,
     fontWeight: '600',
   },
-  segmentTextActive: {
-    color: '#FFFFFF',
-  },
 
-  // Lista
   list: { paddingHorizontal: 16, paddingBottom: 32, gap: 10 },
 
-  // Cards
   card: {
-    backgroundColor: '#12121C',
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#2A2A3F',
     gap: 8,
   },
   cardHeader: {
@@ -295,12 +289,10 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     flex: 1,
-    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
   },
   subRoute: {
-    color: '#8888AA',
     fontSize: 12,
     marginTop: 1,
   },
@@ -310,7 +302,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   metaItem: {
-    color: '#8888AA',
     fontSize: 12,
   },
   cardFooter: {
@@ -318,21 +309,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: '#2A2A3F',
     paddingTop: 8,
   },
   evidenceHint: {
-    color: '#6C63FF',
     fontSize: 11,
     fontWeight: '500',
   },
   chevron: {
-    color: '#6C63FF',
     fontSize: 20,
     fontWeight: '300',
   },
 
-  // Badges
   badge: {
     borderRadius: 8,
     paddingHorizontal: 8,
@@ -343,23 +330,20 @@ const styles = StyleSheet.create({
   badgeText:     { color: '#22C55E', fontSize: 11, fontWeight: '600' },
   badgeTextWarn: { color: '#F59E0B' },
 
-  // Alert icon
   alertIconWrapper: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#1C1C2E',
     alignItems: 'center',
     justifyContent: 'center',
   },
   alertIcon: { fontSize: 18 },
 
-  // Estado vacío
   empty: {
     paddingTop: 60,
     alignItems: 'center',
     gap: 12,
   },
   emptyIcon: { fontSize: 40 },
-  emptyText: { color: '#8888AA', fontSize: 14, textAlign: 'center' },
+  emptyText: { fontSize: 14, textAlign: 'center' },
 });

@@ -13,6 +13,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { signOut, supabase } from '@lib/supabase';
+import { useTheme } from '@lib/ThemeContext';
 import type { User } from '@supabase/supabase-js';
 
 type SettingsNavigationProp = NativeStackNavigationProp<any>;
@@ -21,6 +22,7 @@ export function SettingsScreen() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
   const navigation = useNavigation<SettingsNavigationProp>();
+  const { colors } = useTheme();
 
   useEffect(() => {
     void supabase.auth.getUser().then(({ data }) => setUser(data.user));
@@ -38,7 +40,6 @@ export function SettingsScreen() {
           onPress: async () => {
             setLoading(true);
             await signOut();
-            // RootNavigator detecta el cambio de sesión y redirige a Login automáticamente
           },
         },
       ],
@@ -46,68 +47,68 @@ export function SettingsScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {/* Perfil */}
-      <View style={styles.profileCard}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
+      <View style={[styles.profileCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={[styles.avatar, { backgroundColor: colors.accent + '22', borderColor: colors.accent }]}>
+          <Text style={[styles.avatarText, { color: colors.accent }]}>
             {user?.email?.[0]?.toUpperCase() ?? '?'}
           </Text>
         </View>
         <View style={styles.profileInfo}>
-          <Text style={styles.profileRole}>Conductor</Text>
-          <Text style={styles.profileEmail} numberOfLines={1}>
+          <Text style={[styles.profileRole, { color: colors.accent }]}>Conductor</Text>
+          <Text style={[styles.profileEmail, { color: colors.text }]} numberOfLines={1}>
             {user?.email ?? '—'}
           </Text>
         </View>
       </View>
 
       {/* Sección app */}
-      <Text style={styles.sectionTitle}>Aplicación</Text>
+      <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Aplicación</Text>
 
-      <View style={styles.section}>
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>Versión</Text>
-          <Text style={styles.rowValue}>1.0.0</Text>
+      <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={[styles.row, { borderColor: colors.border }]}>
+          <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>Versión</Text>
+          <Text style={[styles.rowValue, { color: colors.text }]}>1.0.0</Text>
         </View>
         <View style={[styles.row, styles.rowLast]}>
-          <Text style={styles.rowLabel}>Entorno</Text>
-          <Text style={styles.rowValue}>Desarrollo</Text>
+          <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>Entorno</Text>
+          <Text style={[styles.rowValue, { color: colors.text }]}>Desarrollo</Text>
         </View>
       </View>
 
       {/* Mi perfil */}
       <TouchableOpacity
-        style={styles.profileBtn}
+        style={[styles.profileBtn, { backgroundColor: colors.accent + '18', borderColor: colors.accent + '44' }]}
         onPress={() => navigation.navigate('DriverProfile')}
         accessibilityLabel="Mi perfil"
         accessibilityRole="button"
       >
-        <Text style={styles.profileBtnText}>Mi perfil · Documentos</Text>
+        <Text style={[styles.profileBtnText, { color: colors.accent }]}>Mi perfil · Documentos</Text>
       </TouchableOpacity>
 
       {/* Ajustes Generales */}
       <TouchableOpacity
-        style={styles.generalSettingsBtn}
+        style={[styles.generalSettingsBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
         onPress={() => navigation.navigate('GeneralSettings')}
         accessibilityLabel="Ajustes Generales"
         accessibilityRole="button"
       >
-        <Text style={styles.generalSettingsText}>Ajustes Generales</Text>
+        <Text style={[styles.generalSettingsText, { color: colors.text }]}>Ajustes Generales</Text>
       </TouchableOpacity>
 
       {/* Cerrar sesión */}
       <TouchableOpacity
-        style={styles.logoutBtn}
+        style={[styles.logoutBtn, { backgroundColor: colors.danger + '18', borderColor: colors.danger + '44' }]}
         onPress={handleLogout}
         disabled={loading}
         accessibilityLabel="Cerrar sesión"
         accessibilityRole="button"
       >
         {loading ? (
-          <ActivityIndicator color="#FF4444" />
+          <ActivityIndicator color={colors.danger} />
         ) : (
-          <Text style={styles.logoutText}>Cerrar sesión</Text>
+          <Text style={[styles.logoutText, { color: colors.danger }]}>Cerrar sesión</Text>
         )}
       </TouchableOpacity>
     </View>
@@ -117,12 +118,10 @@ export function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0F',
     paddingHorizontal: 20,
     paddingTop: 16,
   },
   profileCard: {
-    backgroundColor: '#12121C',
     borderRadius: 16,
     padding: 20,
     marginBottom: 28,
@@ -130,24 +129,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 16,
     borderWidth: 1,
-    borderColor: '#2A2A3F',
   },
   avatar: {
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#6C63FF22',
     borderWidth: 1,
-    borderColor: '#6C63FF',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarText: { color: '#6C63FF', fontSize: 22, fontWeight: '700' },
+  avatarText: { fontSize: 22, fontWeight: '700' },
   profileInfo: { flex: 1, gap: 2 },
-  profileRole: { color: '#6C63FF', fontSize: 11, letterSpacing: 1.5, fontWeight: '700' },
-  profileEmail: { color: '#FFFFFF', fontSize: 14 },
+  profileRole: { fontSize: 11, letterSpacing: 1.5, fontWeight: '700' },
+  profileEmail: { fontSize: 14 },
   sectionTitle: {
-    color: '#8888AA',
     fontSize: 11,
     letterSpacing: 1.5,
     marginBottom: 8,
@@ -155,10 +150,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   section: {
-    backgroundColor: '#12121C',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#2A2A3F',
     marginBottom: 32,
     overflow: 'hidden',
   },
@@ -168,38 +161,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderColor: '#2A2A3F',
   },
   rowLast: { borderBottomWidth: 0 },
-  rowLabel: { color: '#8888AA', fontSize: 14 },
-  rowValue: { color: '#FFFFFF', fontSize: 14 },
+  rowLabel: { fontSize: 14 },
+  rowValue: { fontSize: 14 },
   logoutBtn: {
-    backgroundColor: '#FF444422',
     borderRadius: 14,
     padding: 18,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#FF444444',
   },
-  logoutText: { color: '#FF4444', fontSize: 16, fontWeight: '600' },
+  logoutText: { fontSize: 16, fontWeight: '600' },
   profileBtn: {
-    backgroundColor: '#6C63FF22',
     borderRadius: 14,
     padding: 18,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#6C63FF44',
     marginBottom: 12,
   },
-  profileBtnText: { color: '#6C63FF', fontSize: 16, fontWeight: '600' },
+  profileBtnText: { fontSize: 16, fontWeight: '600' },
   generalSettingsBtn: {
-    backgroundColor: '#12121C',
     borderRadius: 14,
     padding: 18,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#2A2A3F',
     marginBottom: 16,
   },
-  generalSettingsText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  generalSettingsText: { fontSize: 16, fontWeight: '600' },
 });

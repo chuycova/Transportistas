@@ -1,4 +1,4 @@
-// ─── features/profile/screens/ProfileScreen.tsx ──────────────────────────────
+// ─── ProfileScreen.tsx ────────────────────────────────────────────────────────
 // Perfil del conductor: datos de licencia, estado de documentos y contactos
 // de emergencia. Solo lectura (el admin edita desde la web).
 
@@ -8,6 +8,7 @@ import {
   StyleSheet, RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@lib/ThemeContext';
 import { useDriverProfile, type DocStatus, type DocType, type DriverDocument, type EmergencyContact } from '../hooks/useDriverProfile';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -41,27 +42,29 @@ function isExpiringSoon(iso: string | null) {
 // ─── Sub-componentes ──────────────────────────────────────────────────────────
 
 function SectionTitle({ label }: { label: string }) {
-  return <Text style={styles.sectionTitle}>{label.toUpperCase()}</Text>;
+  const { colors } = useTheme();
+  return <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>{label.toUpperCase()}</Text>;
 }
 
 function DocumentCard({ doc }: { doc: DriverDocument }) {
+  const { colors } = useTheme();
   const meta = STATUS_META[doc.status];
   const warnExpiry = doc.status === 'valid' && isExpiringSoon(doc.expires_at);
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <View style={styles.cardRow}>
         <View style={styles.cardLeft}>
-          <Text style={styles.docTitle}>{doc.title || DOC_TYPE_LABELS[doc.doc_type]}</Text>
+          <Text style={[styles.docTitle, { color: colors.text }]}>{doc.title || DOC_TYPE_LABELS[doc.doc_type]}</Text>
           {doc.doc_number && (
-            <Text style={styles.docSub}>N° {doc.doc_number}</Text>
+            <Text style={[styles.docSub, { color: colors.textSecondary }]}>N° {doc.doc_number}</Text>
           )}
           {doc.expires_at && (
-            <Text style={[styles.docSub, warnExpiry && { color: '#F59E0B' }]}>
+            <Text style={[styles.docSub, { color: warnExpiry ? '#F59E0B' : colors.textSecondary }]}>
               Vence: {fmtDate(doc.expires_at)}{warnExpiry ? ' ⚠' : ''}
             </Text>
           )}
           {doc.status === 'rejected' && doc.rejection_reason && (
-            <Text style={styles.docReject}>Motivo: {doc.rejection_reason}</Text>
+            <Text style={[styles.docReject, { color: colors.danger }]}>Motivo: {doc.rejection_reason}</Text>
           )}
         </View>
         <View style={[styles.statusBadge, { backgroundColor: meta.bg }]}>
@@ -74,27 +77,28 @@ function DocumentCard({ doc }: { doc: DriverDocument }) {
 }
 
 function ContactCard({ contact }: { contact: EmergencyContact }) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <View style={styles.cardRow}>
-        <View style={styles.contactIcon}>
-          <Ionicons name="person-outline" size={18} color="#6C63FF" />
+        <View style={[styles.contactIcon, { backgroundColor: colors.accent + '22', borderColor: colors.accent + '44' }]}>
+          <Ionicons name="person-outline" size={18} color={colors.accent} />
         </View>
         <View style={styles.cardLeft}>
           <View style={styles.contactNameRow}>
-            <Text style={styles.contactName}>{contact.full_name}</Text>
+            <Text style={[styles.contactName, { color: colors.text }]}>{contact.full_name}</Text>
             {contact.is_primary && (
-              <View style={styles.primaryBadge}>
-                <Text style={styles.primaryText}>Principal</Text>
+              <View style={[styles.primaryBadge, { backgroundColor: colors.accent + '22', borderColor: colors.accent + '44' }]}>
+                <Text style={[styles.primaryText, { color: colors.accent }]}>Principal</Text>
               </View>
             )}
           </View>
           {contact.relationship && (
-            <Text style={styles.docSub}>{contact.relationship}</Text>
+            <Text style={[styles.docSub, { color: colors.textSecondary }]}>{contact.relationship}</Text>
           )}
-          <Text style={styles.contactPhone}>{contact.phone}</Text>
+          <Text style={[styles.contactPhone, { color: colors.text }]}>{contact.phone}</Text>
           {contact.phone_alt && (
-            <Text style={styles.docSub}>{contact.phone_alt}</Text>
+            <Text style={[styles.docSub, { color: colors.textSecondary }]}>{contact.phone_alt}</Text>
           )}
         </View>
       </View>
@@ -106,22 +110,26 @@ function ContactCard({ contact }: { contact: EmergencyContact }) {
 
 export function ProfileScreen() {
   const { documents, contacts, profile, loading, error, refetch } = useDriverProfile();
+  const { colors } = useTheme();
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#6C63FF" />
+      <View style={[styles.centered, { backgroundColor: colors.bg }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.centered}>
-        <Ionicons name="cloud-offline-outline" size={40} color="#4A4A6A" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={() => void refetch()}>
-          <Text style={styles.retryText}>Reintentar</Text>
+      <View style={[styles.centered, { backgroundColor: colors.bg }]}>
+        <Ionicons name="cloud-offline-outline" size={40} color={colors.textMuted} />
+        <Text style={[styles.errorText, { color: colors.textSecondary }]}>{error}</Text>
+        <TouchableOpacity
+          style={[styles.retryBtn, { backgroundColor: colors.accent + '22', borderColor: colors.accent + '44' }]}
+          onPress={() => void refetch()}
+        >
+          <Text style={[styles.retryText, { color: colors.accent }]}>Reintentar</Text>
         </TouchableOpacity>
       </View>
     );
@@ -133,13 +141,13 @@ export function ProfileScreen() {
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
       refreshControl={
         <RefreshControl
           refreshing={loading}
           onRefresh={() => void refetch()}
-          tintColor="#6C63FF"
+          tintColor={colors.accent}
         />
       }
     >
@@ -148,50 +156,52 @@ export function ProfileScreen() {
         <>
           <SectionTitle label="Mi perfil" />
           <View style={styles.metricsGrid}>
-            <View style={styles.metricCard}>
-              <Text style={styles.metricValue}>
+            <View style={[styles.metricCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.metricValue, { color: colors.text }]}>
                 {profile.avg_rating != null ? profile.avg_rating.toFixed(1) : '—'}
               </Text>
-              <Text style={styles.metricLabel}>Calificación</Text>
+              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Calificación</Text>
             </View>
-            <View style={styles.metricCard}>
-              <Text style={styles.metricValue}>{profile.total_trips}</Text>
-              <Text style={styles.metricLabel}>Viajes</Text>
+            <View style={[styles.metricCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.metricValue, { color: colors.text }]}>{profile.total_trips}</Text>
+              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Viajes</Text>
             </View>
-            <View style={styles.metricCard}>
-              <Text style={styles.metricValue}>
+            <View style={[styles.metricCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.metricValue, { color: colors.text }]}>
                 {profile.on_time_pct != null ? `${Math.round(profile.on_time_pct)}%` : '—'}
               </Text>
-              <Text style={styles.metricLabel}>A tiempo</Text>
+              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>A tiempo</Text>
             </View>
-            <View style={[styles.metricCard, {
-              borderColor: profile.risk_level === 'high' ? '#EF4444' : profile.risk_level === 'medium' ? '#F59E0B' : '#10B981',
+            <View style={[styles.metricCard, { backgroundColor: colors.surface, borderColor:
+              profile.risk_level === 'high' ? '#EF4444' :
+              profile.risk_level === 'medium' ? '#F59E0B' : '#10B981',
             }]}>
-              <Text style={[styles.metricValue, {
-                color: profile.risk_level === 'high' ? '#EF4444' : profile.risk_level === 'medium' ? '#F59E0B' : '#10B981',
+              <Text style={[styles.metricValue, { color:
+                profile.risk_level === 'high' ? '#EF4444' :
+                profile.risk_level === 'medium' ? '#F59E0B' : '#10B981',
               }]}>
                 {profile.risk_level === 'low' ? 'Bajo' : profile.risk_level === 'medium' ? 'Medio' : 'Alto'}
               </Text>
-              <Text style={styles.metricLabel}>Riesgo</Text>
+              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Riesgo</Text>
             </View>
           </View>
 
           {/* Datos de licencia */}
           {(profile.license_number || profile.license_category || profile.license_expiry) && (
-            <View style={styles.licenseCard}>
+            <View style={[styles.licenseCard, { backgroundColor: colors.surface, borderColor: colors.accent + '44' }]}>
               <View style={styles.licenseRow}>
-                <Ionicons name="card-outline" size={16} color="#6C63FF" />
-                <Text style={styles.licenseTitle}>Licencia de conducir</Text>
+                <Ionicons name="card-outline" size={16} color={colors.accent} />
+                <Text style={[styles.licenseTitle, { color: colors.accent }]}>Licencia de conducir</Text>
               </View>
               {profile.license_number && (
-                <Text style={styles.licenseField}>N° {profile.license_number}
+                <Text style={[styles.licenseField, { color: colors.text }]}>N° {profile.license_number}
                   {profile.license_category ? ` · Cat. ${profile.license_category}` : ''}
                 </Text>
               )}
               {profile.license_expiry && (
                 <Text style={[
                   styles.licenseExpiry,
-                  isExpiringSoon(profile.license_expiry) && { color: '#F59E0B' },
+                  { color: isExpiringSoon(profile.license_expiry) ? '#F59E0B' : colors.textSecondary },
                 ]}>
                   Vence {fmtDate(profile.license_expiry)}
                   {isExpiringSoon(profile.license_expiry) ? ' — próximo a vencer ⚠' : ''}
@@ -220,9 +230,9 @@ export function ProfileScreen() {
       <SectionTitle label="Mis documentos" />
       {documents.length === 0 ? (
         <View style={styles.emptyState}>
-          <Ionicons name="document-outline" size={36} color="#2A2A3F" />
-          <Text style={styles.emptyText}>Sin documentos registrados</Text>
-          <Text style={styles.emptySubText}>El administrador debe subir tus documentos desde el panel web</Text>
+          <Ionicons name="document-outline" size={36} color={colors.border} />
+          <Text style={[styles.emptyText, { color: colors.textMuted }]}>Sin documentos registrados</Text>
+          <Text style={[styles.emptySubText, { color: colors.textMuted }]}>El administrador debe subir tus documentos desde el panel web</Text>
         </View>
       ) : (
         documents.map((doc) => <DocumentCard key={doc.id} doc={doc} />)
@@ -232,9 +242,9 @@ export function ProfileScreen() {
       <SectionTitle label="Contactos de emergencia" />
       {contacts.length === 0 ? (
         <View style={styles.emptyState}>
-          <Ionicons name="people-outline" size={36} color="#2A2A3F" />
-          <Text style={styles.emptyText}>Sin contactos registrados</Text>
-          <Text style={styles.emptySubText}>El administrador debe agregar tus contactos de emergencia desde el panel web</Text>
+          <Ionicons name="people-outline" size={36} color={colors.border} />
+          <Text style={[styles.emptyText, { color: colors.textMuted }]}>Sin contactos registrados</Text>
+          <Text style={[styles.emptySubText, { color: colors.textMuted }]}>El administrador debe agregar tus contactos de emergencia desde el panel web</Text>
         </View>
       ) : (
         contacts.map((c) => <ContactCard key={c.id} contact={c} />)
@@ -248,31 +258,22 @@ export function ProfileScreen() {
 // ─── Estilos ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0A0A0F',
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-  },
+  container: { flex: 1 },
+  content: { paddingHorizontal: 16, paddingTop: 16 },
   centered: {
     flex: 1,
-    backgroundColor: '#0A0A0F',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
     padding: 24,
   },
   sectionTitle: {
-    color: '#4A4A6A',
     fontSize: 11,
     letterSpacing: 1.5,
     fontWeight: '700',
     marginBottom: 10,
     marginTop: 8,
   },
-  // Métricas
   metricsGrid: {
     flexDirection: 'row',
     gap: 10,
@@ -280,56 +281,25 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     flex: 1,
-    backgroundColor: '#12121C',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#2A2A3F',
     paddingVertical: 14,
     alignItems: 'center',
     gap: 4,
   },
-  metricValue: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  metricLabel: {
-    color: '#4A4A6A',
-    fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  // Licencia
+  metricValue: { fontSize: 18, fontWeight: '700' },
+  metricLabel: { fontSize: 10, fontWeight: '600', letterSpacing: 0.5 },
   licenseCard: {
-    backgroundColor: '#12121C',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#6C63FF44',
     padding: 14,
     marginBottom: 20,
     gap: 6,
   },
-  licenseRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  licenseTitle: {
-    color: '#6C63FF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  licenseField: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-    fontFamily: 'monospace',
-  },
-  licenseExpiry: {
-    color: '#8888AA',
-    fontSize: 12,
-  },
-  // Alerta
+  licenseRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  licenseTitle: { fontSize: 13, fontWeight: '700' },
+  licenseField: { fontSize: 14, fontWeight: '600', fontFamily: 'monospace' },
+  licenseExpiry: { fontSize: 12 },
   alertBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -342,18 +312,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 20,
   },
-  alertText: {
-    color: '#F59E0B',
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
-  },
-  // Cards
+  alertText: { color: '#F59E0B', fontSize: 13, fontWeight: '600', flex: 1 },
   card: {
-    backgroundColor: '#12121C',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#2A2A3F',
     padding: 14,
     marginBottom: 10,
   },
@@ -363,24 +325,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 12,
   },
-  cardLeft: {
-    flex: 1,
-    gap: 3,
-  },
-  docTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  docSub: {
-    color: '#8888AA',
-    fontSize: 12,
-  },
-  docReject: {
-    color: '#EF4444',
-    fontSize: 12,
-    marginTop: 2,
-  },
+  cardLeft: { flex: 1, gap: 3 },
+  docTitle: { fontSize: 14, fontWeight: '600' },
+  docSub: { fontSize: 12 },
+  docReject: { fontSize: 12, marginTop: 2 },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -390,18 +338,12 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     flexShrink: 0,
   },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  // Contactos
+  statusText: { fontSize: 11, fontWeight: '700' },
   contactIcon: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#6C63FF22',
     borderWidth: 1,
-    borderColor: '#6C63FF44',
     justifyContent: 'center',
     alignItems: 'center',
     flexShrink: 0,
@@ -412,65 +354,29 @@ const styles = StyleSheet.create({
     gap: 8,
     flexWrap: 'wrap',
   },
-  contactName: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  contactName: { fontSize: 14, fontWeight: '600' },
   primaryBadge: {
-    backgroundColor: '#6C63FF22',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#6C63FF44',
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
-  primaryText: {
-    color: '#6C63FF',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  contactPhone: {
-    color: '#A0A0C0',
-    fontSize: 13,
-    fontFamily: 'monospace',
-  },
-  // Empty
+  primaryText: { fontSize: 10, fontWeight: '700' },
+  contactPhone: { fontSize: 13, fontFamily: 'monospace' },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 28,
     gap: 8,
     marginBottom: 8,
   },
-  emptyText: {
-    color: '#4A4A6A',
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  emptySubText: {
-    color: '#2A2A3F',
-    fontSize: 12,
-    textAlign: 'center',
-    maxWidth: 260,
-  },
-  // Error
-  errorText: {
-    color: '#8888AA',
-    fontSize: 14,
-    textAlign: 'center',
-  },
+  emptyText: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
+  emptySubText: { fontSize: 12, textAlign: 'center', maxWidth: 260 },
+  errorText: { fontSize: 14, textAlign: 'center' },
   retryBtn: {
-    backgroundColor: '#6C63FF22',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#6C63FF44',
     paddingHorizontal: 20,
     paddingVertical: 10,
   },
-  retryText: {
-    color: '#6C63FF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  retryText: { fontSize: 14, fontWeight: '600' },
 });

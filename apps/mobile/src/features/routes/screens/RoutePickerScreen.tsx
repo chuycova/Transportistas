@@ -1,7 +1,5 @@
 // ─── RoutePickerScreen.tsx ────────────────────────────────────────────────────
 // El conductor selecciona la ruta asignada antes de iniciar tracking.
-// Consulta el backend: GET /vehicles/mine → obtiene vehicleId + rutas asignadas.
-// Guarda la selección en MMKV para que el tracking hook la use.
 
 import React, { useEffect, useState, useCallback } from 'react';
 import {
@@ -16,8 +14,9 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { Route } from '@zona-zero/domain';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@lib/supabase';
+import { useTheme } from '@lib/ThemeContext';
 import { setStr } from '@lib/mmkv';
 import { MMKV_KEYS, API_URL } from '@lib/constants';
 import type { RootStackParamList } from '@navigation/RootNavigator';
@@ -46,6 +45,10 @@ export function RoutePickerScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { colors, isDark } = useTheme();
+
+  const cardBg = isDark ? '#1C1C2E' : '#F6F8FA';
+  const borderColor = isDark ? '#FFFFFF10' : '#0000000A';
 
   const fetchVehicle = useCallback(async () => {
     try {
@@ -63,8 +66,6 @@ export function RoutePickerScreen() {
       const data = (await res.json()) as VehicleResponse;
       setVehicleData(data);
       setError(null);
-
-      // Guardar vehicleId en MMKV para el tracking
       setStr(MMKV_KEYS.ACTIVE_VEHICLE_ID, data.vehicleId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar rutas');
@@ -90,19 +91,22 @@ export function RoutePickerScreen() {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#6C63FF" />
-        <Text style={styles.loadingText}>Cargando rutas...</Text>
+      <View style={[styles.centered, { backgroundColor: colors.bg }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Cargando rutas...</Text>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.errorIcon}>⚠️</Text>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={fetchVehicle}>
+      <View style={[styles.centered, { backgroundColor: colors.bg }]}>
+        <Ionicons name="alert-circle-outline" size={56} color={colors.danger} style={{ marginBottom: 8 }} />
+        <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+        <TouchableOpacity
+          style={[styles.retryBtn, { backgroundColor: colors.accent }]}
+          onPress={fetchVehicle}
+        >
           <Text style={styles.retryText}>Reintentar</Text>
         </TouchableOpacity>
       </View>
@@ -110,23 +114,23 @@ export function RoutePickerScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {/* Header del vehículo */}
-      <View style={styles.vehicleCard}>
-        <Text style={styles.vehicleLabel}>Vehículo asignado</Text>
-        <Text style={styles.vehiclePlate}>{vehicleData?.plate}</Text>
+      <View style={[styles.vehicleCard, { backgroundColor: cardBg, borderColor }]}>
+        <Text style={[styles.vehicleLabel, { color: colors.textSecondary }]}>Vehículo asignado</Text>
+        <Text style={[styles.vehiclePlate, { color: colors.text }]}>{vehicleData?.plate}</Text>
         {vehicleData?.alias ? (
-          <Text style={styles.vehicleAlias}>{vehicleData.alias}</Text>
+          <Text style={[styles.vehicleAlias, { color: colors.textSecondary }]}>{vehicleData.alias}</Text>
         ) : null}
       </View>
 
       {/* Lista de rutas */}
-      <Text style={styles.sectionTitle}>Selecciona tu ruta</Text>
+      <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Selecciona tu ruta</Text>
 
       {vehicleData?.assignedRoutes.length === 0 ? (
-        <View style={styles.centered}>
-          <Text style={styles.emptyText}>No tienes rutas asignadas.</Text>
-          <Text style={styles.emptySubText}>Contacta a tu supervisor.</Text>
+        <View style={[styles.centered, { backgroundColor: colors.bg }]}>
+          <Text style={[styles.emptyText, { color: colors.text }]}>No tienes rutas asignadas.</Text>
+          <Text style={[styles.emptySubText, { color: colors.textSecondary }]}>Contacta a tu supervisor.</Text>
         </View>
       ) : (
         <FlatList
@@ -136,29 +140,34 @@ export function RoutePickerScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => { setRefreshing(true); void fetchVehicle(); }}
-              tintColor="#6C63FF"
+              tintColor={colors.accent}
             />
           }
           contentContainerStyle={{ paddingBottom: 24 }}
           renderItem={({ item }) => (
             <TouchableOpacity
-              style={styles.routeCard}
+              style={[styles.routeCard, { backgroundColor: cardBg, borderColor }]}
               onPress={() => selectRoute(item)}
+              activeOpacity={0.8}
               accessibilityLabel={`Ruta ${item.name}, de ${item.originName} a ${item.destinationName}`}
               accessibilityRole="button"
             >
               <View style={styles.routeHeader}>
-                <Text style={styles.routeName}>{item.name}</Text>
+                <Text style={[styles.routeName, { color: colors.text }]}>{item.name}</Text>
                 {item.estimatedDurationS ? (
-                  <View style={styles.durationBadge}>
-                    <Text style={styles.durationText}>{formatDuration(item.estimatedDurationS)}</Text>
+                  <View style={[styles.durationBadge, { backgroundColor: colors.accent + '22' }]}>
+                    <Text style={[styles.durationText, { color: colors.accent }]}>{formatDuration(item.estimatedDurationS)}</Text>
                   </View>
                 ) : null}
               </View>
               <View style={styles.routeRoute}>
-                <Text style={styles.routeOrigin}>📍 {item.originName}</Text>
-                <Text style={styles.routeArrow}>→</Text>
-                <Text style={styles.routeDest}>{item.destinationName} 🏁</Text>
+                <Ionicons name="location" size={14} color="#22C55E" />
+                <Text style={[styles.routeOrigin, { color: colors.textSecondary }]}>{item.originName}</Text>
+                
+                <Ionicons name="arrow-forward" size={14} color={colors.textMuted} style={{ marginHorizontal: 4 }} />
+                
+                <Ionicons name="flag" size={14} color="#EF4444" />
+                <Text style={[styles.routeDest, { color: colors.textSecondary }]}>{item.destinationName}</Text>
               </View>
             </TouchableOpacity>
           )}
@@ -171,7 +180,6 @@ export function RoutePickerScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0F',
     paddingHorizontal: 20,
     paddingTop: 16,
   },
@@ -179,48 +187,42 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0A0A0F',
     gap: 12,
   },
   vehicleCard: {
-    backgroundColor: '#12121C',
     borderRadius: 16,
     padding: 20,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#6C63FF44',
   },
-  vehicleLabel: { color: '#8888AA', fontSize: 12, letterSpacing: 1, marginBottom: 4 },
-  vehiclePlate: { color: '#FFFFFF', fontSize: 28, fontWeight: '700', letterSpacing: 2 },
-  vehicleAlias: { color: '#8888AA', fontSize: 14, marginTop: 4 },
+  vehicleLabel: { fontSize: 12, letterSpacing: 1, marginBottom: 4 },
+  vehiclePlate: { fontSize: 28, fontWeight: '700', letterSpacing: 2 },
+  vehicleAlias: { fontSize: 14, marginTop: 4 },
   sectionTitle: {
-    color: '#8888AA',
     fontSize: 13,
     letterSpacing: 1,
     marginBottom: 12,
     textTransform: 'uppercase',
   },
   routeCard: {
-    backgroundColor: '#12121C',
-    borderRadius: 14,
-    padding: 18,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#2A2A3F',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1.5,
   },
-  routeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  routeName: { color: '#FFFFFF', fontSize: 16, fontWeight: '600', flex: 1 },
-  durationBadge: { backgroundColor: '#6C63FF22', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
-  durationText: { color: '#6C63FF', fontSize: 12, fontWeight: '600' },
+  routeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  routeName: { fontSize: 16, fontWeight: '600', flex: 1 },
+  durationBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  durationText: { fontSize: 12, fontWeight: '600' },
   routeRoute: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
-  routeOrigin: { color: '#8888AA', fontSize: 13 },
-  routeArrow: { color: '#4A4A6A', fontSize: 13 },
-  routeDest: { color: '#8888AA', fontSize: 13 },
-  loadingText: { color: '#8888AA', marginTop: 12, fontSize: 14 },
+  routeOrigin: { fontSize: 13 },
+  routeArrow: { fontSize: 13 },
+  routeDest: { fontSize: 13 },
+  loadingText: { marginTop: 12, fontSize: 14 },
   errorIcon: { fontSize: 40 },
-  errorText: { color: '#FF6B6B', textAlign: 'center', fontSize: 14, maxWidth: 260 },
-  retryBtn: { backgroundColor: '#6C63FF', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12 },
+  errorText: { textAlign: 'center', fontSize: 14, maxWidth: 260 },
+  retryBtn: { borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12 },
   retryText: { color: '#fff', fontWeight: '600' },
-  emptyText: { color: '#FFFFFF', fontSize: 16 },
-  emptySubText: { color: '#8888AA', fontSize: 13 },
+  emptyText: { fontSize: 16 },
+  emptySubText: { fontSize: 13 },
 });

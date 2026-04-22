@@ -8,14 +8,15 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { HistoryStackParamList } from '../navigation/HistoryNavigator';
 import { EvidenceSection } from '../components/EvidenceSection';
+import { useTheme } from '@lib/ThemeContext';
 
 type Props = NativeStackScreenProps<HistoryStackParamList, 'RouteDetail'>;
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value, colors }: { label: string; value: string; colors: ReturnType<typeof useTheme>['colors'] }) {
   return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
+    <View style={[styles.infoRow, { borderBottomColor: colors.surfaceAlt }]}>
+      <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{label}</Text>
+      <Text style={[styles.infoValue, { color: colors.text }]}>{value}</Text>
     </View>
   );
 }
@@ -23,10 +24,11 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 export function RouteDetailScreen({ route }: Props) {
   const r = route.params.route;
   const isOff = r.status === 'off_route';
+  const { colors } = useTheme();
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.content}
     >
 
@@ -39,13 +41,13 @@ export function RouteDetailScreen({ route }: Props) {
       </View>
 
       {/* ── Info de la ruta ── */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Información de la ruta</Text>
-        <InfoRow label="Nombre"    value={r.routeName} />
-        <InfoRow label="Fecha"     value={r.date} />
-        <InfoRow label="Duración"  value={r.duration} />
-        <InfoRow label="Distancia" value={r.distance} />
-        <InfoRow label="Estado"    value={isOff ? 'Desvío detectado' : 'Completada'} />
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Información de la ruta</Text>
+        <InfoRow label="Nombre"    value={r.routeName} colors={colors} />
+        <InfoRow label="Fecha"     value={r.date}      colors={colors} />
+        <InfoRow label="Duración"  value={r.duration}  colors={colors} />
+        <InfoRow label="Distancia" value={r.distance}  colors={colors} />
+        <InfoRow label="Estado"    value={isOff ? 'Desvío detectado' : 'Completada'} colors={colors} />
       </View>
 
       {/* ── Evidencia ── */}
@@ -56,7 +58,7 @@ export function RouteDetailScreen({ route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0F' },
+  container: { flex: 1 },
   content:   { padding: 16, gap: 14, paddingBottom: 40 },
 
   statusBanner: {
@@ -75,15 +77,12 @@ const styles = StyleSheet.create({
   statusTextWarn: { color: '#F59E0B' },
 
   card: {
-    backgroundColor: '#12121C',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#2A2A3F',
     gap: 10,
   },
   sectionTitle: {
-    color: '#8888AA',
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 1.2,
@@ -95,8 +94,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E1E2E',
   },
-  infoLabel: { color: '#8888AA', fontSize: 13 },
-  infoValue: { color: '#FFFFFF', fontSize: 13, fontWeight: '500' },
+  infoLabel: { fontSize: 13 },
+  infoValue: { fontSize: 13, fontWeight: '500' },
 });

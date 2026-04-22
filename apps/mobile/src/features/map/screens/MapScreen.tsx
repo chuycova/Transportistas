@@ -7,7 +7,8 @@ import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import type { Region } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { StatusBar } from 'expo-status-bar';
+import { useTheme, darkMapStyle, lightMapStyle } from '@lib/ThemeContext';
+import { ThemedStatusBar } from '@components/ui/ThemedStatusBar';
 
 const DEFAULT_REGION: Region = {
   latitude: 20.6597,
@@ -21,6 +22,7 @@ export function MapScreen() {
   const [region, setRegion] = useState<Region>(DEFAULT_REGION);
   const [hasLocation, setHasLocation] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const { isDark, colors } = useTheme();
 
   useEffect(() => {
     void (async () => {
@@ -51,7 +53,7 @@ export function MapScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
+      <ThemedStatusBar />
       <MapView
         ref={mapRef}
         style={styles.map}
@@ -61,13 +63,13 @@ export function MapScreen() {
         showsUserLocation
         showsMyLocationButton={false}
         showsBuildings={false}
-        customMapStyle={darkMapStyle}
+        customMapStyle={isDark ? darkMapStyle : lightMapStyle}
       >
         {hasLocation ? (
           <Marker
             coordinate={{ latitude: region.latitude, longitude: region.longitude }}
             title="Tu posición"
-            pinColor="#6C63FF"
+            pinColor={colors.accent}
           />
         ) : null}
       </MapView>
@@ -75,19 +77,19 @@ export function MapScreen() {
       {/* Botón centrar */}
       {hasLocation && (
         <TouchableOpacity
-          style={styles.centerBtn}
+          style={[styles.centerBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
           onPress={centerOnMe}
           accessibilityLabel="Centrar en mi posición"
           accessibilityRole="button"
         >
-          <Text style={styles.centerBtnText}>⊙</Text>
+          <Text style={[styles.centerBtnText, { color: colors.accent }]}>⊙</Text>
         </TouchableOpacity>
       )}
 
       {/* Aviso sin permisos */}
       {permissionDenied && (
-        <View style={styles.permBanner}>
-          <Text style={styles.permText}>
+        <View style={[styles.permBanner, { backgroundColor: colors.warning + '22', borderColor: colors.warning + '44' }]}>
+          <Text style={[styles.permText, { color: colors.warning }]}>
             Activa los permisos de ubicación para ver tu posición.
           </Text>
         </View>
@@ -96,50 +98,33 @@ export function MapScreen() {
   );
 }
 
-const darkMapStyle = [
-  { elementType: 'geometry', stylers: [{ color: '#0A0A0F' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8888AA' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#0A0A0F' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1C1C2E' }] },
-  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#2A2A3F' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#3A3A5C' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#060610' }] },
-  { featureType: 'poi',               stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit',           stylers: [{ visibility: 'off' }] },
-  { featureType: 'landscape.man_made',stylers: [{ visibility: 'off' }] },
-];
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0F' },
+  container: { flex: 1 },
   map: { flex: 1 },
   centerBtn: {
     position: 'absolute',
     bottom: 32,
     right: 20,
-    backgroundColor: '#12121C',
     borderRadius: 30,
     width: 50,
     height: 50,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#2A2A3F',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 6,
   },
-  centerBtnText: { color: '#6C63FF', fontSize: 22, fontWeight: '700' },
+  centerBtnText: { fontSize: 22, fontWeight: '700' },
   permBanner: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#1C1410',
     padding: 16,
     borderTopWidth: 1,
-    borderColor: '#FF9F4444',
   },
-  permText: { color: '#FFBB55', fontSize: 13, textAlign: 'center' },
+  permText: { fontSize: 13, textAlign: 'center' },
 });

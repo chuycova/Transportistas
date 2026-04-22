@@ -1,6 +1,6 @@
 // ─── features/incidents/components/ReportIncidentModal.tsx ───────────────────
-// Modal bottom-sheet para reportar un incidente desde la pantalla de tracking.
-// Incluye: tipo, gravedad, descripción y adjuntar fotos/galería.
+// Modal para reportar un incidente desde la pantalla de tracking.
+// Diseño moderno y minimalista con iconos SVG (Ionicons).
 
 import React, { useState, useCallback } from 'react';
 import {
@@ -8,47 +8,59 @@ import {
   Modal, ScrollView, Image, Alert, ActivityIndicator,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import { useTheme } from '@lib/ThemeContext';
 import { useReportIncident, type IncidentType, type IncidentSeverity } from '../hooks/useReportIncident';
 
-// ─── Constantes de opciones ───────────────────────────────────────────────────
-
-const TYPE_OPTIONS: Array<{ value: IncidentType; label: string; emoji: string }> = [
-  { value: 'mechanical',      label: 'Mecánico',   emoji: '🔧' },
-  { value: 'route_deviation', label: 'Desvío',     emoji: '🗺️' },
-  { value: 'accident',        label: 'Accidente',  emoji: '🚨' },
-  { value: 'weather',         label: 'Clima',      emoji: '⛈️' },
-  { value: 'cargo',           label: 'Carga',      emoji: '📦' },
-  { value: 'other',           label: 'Otro',       emoji: '📝' },
+// ─── Datos ───────────────────────────────────────────────────────────────────
+const TYPE_OPTIONS: Array<{
+  value: IncidentType;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}> = [
+  { value: 'mechanical',      label: 'Mecánico',  icon: 'construct-outline' },
+  { value: 'route_deviation', label: 'Desvío',    icon: 'git-branch-outline' },
+  { value: 'accident',        label: 'Accidente', icon: 'warning-outline' },
+  { value: 'weather',         label: 'Clima',     icon: 'thunderstorm-outline' },
+  { value: 'cargo',           label: 'Carga',     icon: 'cube-outline' },
+  { value: 'other',           label: 'Otro',      icon: 'ellipsis-horizontal-outline' },
 ];
 
-const SEVERITY_OPTIONS: Array<{ value: IncidentSeverity; label: string; color: string }> = [
-  { value: 'low',      label: 'Bajo',     color: '#10B981' },
-  { value: 'medium',   label: 'Medio',    color: '#F59E0B' },
-  { value: 'high',     label: 'Alto',     color: '#F97316' },
-  { value: 'critical', label: 'Crítico',  color: '#EF4444' },
+const SEVERITY_OPTIONS: Array<{
+  value: IncidentSeverity;
+  label: string;
+  color: string;
+}> = [
+  { value: 'low',      label: 'Bajo',    color: '#10B981' },
+  { value: 'medium',   label: 'Medio',   color: '#F59E0B' },
+  { value: 'high',     label: 'Alto',    color: '#F97316' },
+  { value: 'critical', label: 'Crítico', color: '#EF4444' },
 ];
 
-// ─── Props ────────────────────────────────────────────────────────────────────
-
+// ─── Props ───────────────────────────────────────────────────────────────────
 interface ReportIncidentModalProps {
-  visible:    boolean;
-  onClose:    () => void;
-  tripId?:    string;
-  vehicleId?: string;
-  lat?:       number;
-  lng?:       number;
+  visible:     boolean;
+  onClose:     () => void;
+  onReported?: (incident: { code: string; type: IncidentType; severity: IncidentSeverity }) => void;
+  tripId?:     string;
+  vehicleId?:  string;
+  lat?:        number;
+  lng?:        number;
 }
 
-// ─── Componente ───────────────────────────────────────────────────────────────
-
+// ─── Componente ──────────────────────────────────────────────────────────────
 export function ReportIncidentModal({
-  visible, onClose, tripId, vehicleId, lat, lng,
+  visible, onClose, onReported, tripId, vehicleId, lat, lng,
 }: ReportIncidentModalProps) {
   const [type,        setType]        = useState<IncidentType>('other');
   const [severity,    setSeverity]    = useState<IncidentSeverity>('medium');
   const [description, setDescription] = useState('');
   const [images,      setImages]      = useState<ImagePicker.ImagePickerAsset[]>([]);
+  const [actionSheetVisible, setActionSheetVisible] = useState(false);
+  const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const { report, uploading, error } = useReportIncident();
 
@@ -64,7 +76,6 @@ export function ReportIncidentModal({
     onClose();
   }, [reset, onClose]);
 
-  // ── Selección de imagen ────────────────────────────────────────────────────
   const pickImage = useCallback(async (source: 'camera' | 'library') => {
     const permission = source === 'camera'
       ? await ImagePicker.requestCameraPermissionsAsync()
@@ -81,18 +92,11 @@ export function ReportIncidentModal({
     }
 
     const result = source === 'camera'
-      ? await ImagePicker.launchCameraAsync({
-          quality:            0.75,
-          base64:             true,
-          allowsEditing:      false,
-          exif:               false,
-        })
+      ? await ImagePicker.launchCameraAsync({ quality: 0.75, base64: true, allowsEditing: false, exif: false })
       : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes:         ImagePicker.MediaTypeOptions.Images,
-          quality:            0.75,
-          base64:             true,
-          allowsMultipleSelection: true,
-          selectionLimit:     5,
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.75, base64: true,
+          allowsMultipleSelection: true, selectionLimit: 5,
         });
 
     if (!result.canceled) {
@@ -101,18 +105,9 @@ export function ReportIncidentModal({
   }, []);
 
   const handleAddImage = useCallback(() => {
-    Alert.alert(
-      'Adjuntar imagen',
-      '',
-      [
-        { text: '📷  Cámara',  onPress: () => void pickImage('camera') },
-        { text: '🖼️  Galería', onPress: () => void pickImage('library') },
-        { text: 'Cancelar',   style: 'cancel' },
-      ],
-    );
-  }, [pickImage]);
+    setActionSheetVisible(true);
+  }, []);
 
-  // ── Enviar ─────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
     const result = await report({
       tripId, vehicleId, type, severity,
@@ -121,13 +116,19 @@ export function ReportIncidentModal({
     });
 
     if (result) {
+      onReported?.({ code: result.code, type, severity });
       Alert.alert(
-        '✅ Incidente reportado',
+        'Incidente reportado',
         `Código: ${result.code}\n\nEl equipo de control fue notificado.`,
         [{ text: 'OK', onPress: handleClose }],
       );
     }
-  }, [report, tripId, vehicleId, type, severity, description, lat, lng, images, handleClose]);
+  }, [report, tripId, vehicleId, type, severity, description, lat, lng, images, handleClose, onReported]);
+
+  // ─── Render ──────────────────────────────────────────────────────────────
+
+  const cardBg = isDark ? '#1C1C2E' : '#F6F8FA';
+  const borderColor = isDark ? '#FFFFFF10' : '#0000000A';
 
   return (
     <Modal
@@ -136,101 +137,149 @@ export function ReportIncidentModal({
       presentationStyle="pageSheet"
       onRequestClose={handleClose}
     >
-      <KeyboardAvoidingView
-        style={styles.root}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        {/* Header */}
+      <View style={[styles.root, { backgroundColor: colors.bg, paddingTop: insets.top }]}>
+        {/* ── Header ── */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Reportar incidente</Text>
-          <TouchableOpacity onPress={handleClose} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
-            <Text style={styles.headerClose}>✕</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Reportar incidente</Text>
+          <TouchableOpacity
+            onPress={handleClose}
+            style={[styles.headerCloseBtn, { backgroundColor: cardBg }]}
+            hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
+          >
+            <Ionicons name="close" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-
-          {/* Tipo */}
-          <Text style={styles.sectionLabel}>Tipo de incidente</Text>
+        {/* ── Scrollable content: KAV sólo envuelve el scroll, el footer no se mueve ── */}
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView
+          contentContainerStyle={styles.body}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          // iOS: ajusta insets del scroll nativo sin mover el footer
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+        >
+          {/* ── Tipo ── */}
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Tipo de incidente</Text>
           <View style={styles.typeGrid}>
-            {TYPE_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={[styles.typeBtn, type === opt.value && styles.typeBtnActive]}
-                onPress={() => setType(opt.value)}
-              >
-                <Text style={styles.typeEmoji}>{opt.emoji}</Text>
-                <Text style={[styles.typeLabel, type === opt.value && styles.typeLabelActive]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {TYPE_OPTIONS.map((opt) => {
+              const active = type === opt.value;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[
+                    styles.typeBtn,
+                    { backgroundColor: cardBg, borderColor: 'transparent' },
+                    active && { backgroundColor: colors.accent + '15', borderColor: colors.accent + '40' },
+                  ]}
+                  onPress={() => setType(opt.value)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={opt.icon}
+                    size={20}
+                    color={active ? colors.accent : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.typeLabel,
+                      { color: active ? colors.accent : colors.textSecondary },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          {/* Gravedad */}
-          <Text style={styles.sectionLabel}>Gravedad</Text>
+          {/* ── Gravedad ── */}
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Gravedad</Text>
           <View style={styles.severityRow}>
-            {SEVERITY_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={[
-                  styles.severityBtn,
-                  severity === opt.value && { backgroundColor: opt.color + '22', borderColor: opt.color },
-                ]}
-                onPress={() => setSeverity(opt.value)}
-              >
-                <Text style={[styles.severityLabel, severity === opt.value && { color: opt.color }]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {SEVERITY_OPTIONS.map((opt) => {
+              const active = severity === opt.value;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[
+                    styles.severityBtn,
+                    { backgroundColor: cardBg },
+                    active && { backgroundColor: opt.color },
+                  ]}
+                  onPress={() => setSeverity(opt.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.severityLabel, { color: active ? '#FFFFFF' : colors.textSecondary }]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          {/* Descripción */}
-          <Text style={styles.sectionLabel}>Descripción <Text style={styles.optional}>(opcional)</Text></Text>
+          {/* ── Descripcion ── */}
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+            Descripción <Text style={{ fontWeight: '400', opacity: 0.5 }}>(opcional)</Text>
+          </Text>
           <TextInput
-            style={styles.textarea}
+            style={[styles.textarea, {
+              backgroundColor: cardBg,
+              color: colors.text,
+            }]}
             value={description}
             onChangeText={setDescription}
-            placeholder="Describe brevemente lo ocurrido…"
-            placeholderTextColor="#666680"
+            placeholder="Describe brevemente lo ocurrido..."
+            placeholderTextColor={colors.textMuted}
             multiline
             numberOfLines={3}
             maxLength={500}
           />
 
-          {/* Imágenes */}
+          {/* ── Imagenes ── */}
           <View style={styles.imgHeader}>
-            <Text style={styles.sectionLabel}>Evidencias fotográficas <Text style={styles.optional}>(máx. 5)</Text></Text>
-            {images.length < 5 && (
-              <TouchableOpacity onPress={handleAddImage}>
-                <Text style={styles.addImgBtn}>+ Agregar</Text>
-              </TouchableOpacity>
-            )}
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary, marginTop: 0 }]}>
+              Evidencias
+            </Text>
+            <Text style={[styles.imgCounter, { color: colors.textMuted }]}>{images.length}/5</Text>
           </View>
 
           {images.length === 0 ? (
-            <TouchableOpacity style={styles.imgEmpty} onPress={handleAddImage} activeOpacity={0.75}>
-              <Text style={styles.imgEmptyIcon}>📷</Text>
-              <Text style={styles.imgEmptyText}>Toca para adjuntar fotos</Text>
+            <TouchableOpacity
+              style={[
+                styles.imgEmpty,
+                { backgroundColor: colors.accent + '08', borderColor: colors.accent + '30' }
+              ]}
+              onPress={handleAddImage}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.imgEmptyIconWrapper, { backgroundColor: colors.accent + '1A' }]}>
+                <Ionicons name="camera" size={26} color={colors.accent} />
+              </View>
+              <View style={styles.imgEmptyTextContainer}>
+                <Text style={[styles.imgEmptyTitle, { color: colors.accent }]}>Añadir fotografías</Text>
+                <Text style={[styles.imgEmptySub, { color: colors.textMuted }]}>Sube hasta 5 imágenes como evidencia</Text>
+              </View>
             </TouchableOpacity>
           ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imgRow}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imgRow} contentContainerStyle={styles.imgRowContent}>
               {images.map((img, i) => (
                 <View key={img.uri} style={styles.imgThumb}>
                   <Image source={{ uri: img.uri }} style={styles.imgPreview} resizeMode="cover" />
                   <TouchableOpacity
                     style={styles.imgRemove}
                     onPress={() => setImages((p) => p.filter((_, idx) => idx !== i))}
-                    hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+                    hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
                   >
-                    <Text style={styles.imgRemoveText}>✕</Text>
+                    <Ionicons name="close" size={14} color="#FFF" />
                   </TouchableOpacity>
                 </View>
               ))}
               {images.length < 5 && (
-                <TouchableOpacity style={styles.imgAddThumb} onPress={handleAddImage}>
-                  <Text style={styles.imgAddIcon}>+</Text>
+                <TouchableOpacity
+                  style={[styles.imgAddThumb, { backgroundColor: cardBg, borderColor }]}
+                  onPress={handleAddImage}
+                >
+                  <Ionicons name="add" size={28} color={colors.textSecondary} />
                 </TouchableOpacity>
               )}
             </ScrollView>
@@ -238,159 +287,224 @@ export function ReportIncidentModal({
 
           {error && (
             <View style={styles.errorBox}>
+              <Ionicons name="alert-circle-outline" size={16} color="#EF4444" />
               <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
         </ScrollView>
+        </KeyboardAvoidingView>
 
-        {/* Footer */}
-        <View style={styles.footer}>
-          <TouchableOpacity style={styles.cancelBtn} onPress={handleClose} disabled={uploading}>
-            <Text style={styles.cancelText}>Cancelar</Text>
-          </TouchableOpacity>
+        {/* ── Footer: fuera del KAV para que nunca rebote ── */}
+        <View style={[styles.footer, {
+          borderTopColor: isDark ? '#ffffff08' : '#00000008',
+          paddingBottom: Math.max(insets.bottom, 16),
+        }]}>
           <TouchableOpacity
-            style={[styles.submitBtn, uploading && styles.submitBtnDisabled]}
+            style={[styles.submitBtn, { backgroundColor: colors.accent }, uploading && styles.submitBtnDisabled]}
             onPress={() => void handleSubmit()}
             disabled={uploading}
+            activeOpacity={0.8}
           >
-            {uploading
-              ? <ActivityIndicator color="#FFFFFF" size="small" />
-              : <Text style={styles.submitText}>Reportar incidente</Text>
-            }
+            {uploading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <View style={styles.submitInner}>
+                <Text style={styles.submitText}>Enviar Reporte</Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+              </View>
+            )}
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
+
+      {/* ── Opciones de Imagen (Action Sheet) ── */}
+      <Modal
+        visible={actionSheetVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActionSheetVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.actionSheetOverlay}
+          activeOpacity={1}
+          onPress={() => setActionSheetVisible(false)}
+        >
+          <View style={[styles.actionSheetContainer, { backgroundColor: isDark ? '#1C1C2E' : '#FFFFFF' }]} onStartShouldSetResponder={() => true}>
+            <View style={styles.actionSheetHeader}>
+              <Text style={[styles.actionSheetTitle, { color: colors.text }]}>Adjuntar evidencia</Text>
+              <Text style={[styles.actionSheetSub, { color: colors.textSecondary }]}>Selecciona de dónde quieres subir la foto</Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.actionBtn, { borderBottomColor: borderColor }]}
+              onPress={() => { setActionSheetVisible(false); void pickImage('camera'); }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.actionIconWrapper, { backgroundColor: colors.accent + '15' }]}>
+                <Ionicons name="camera" size={20} color={colors.accent} />
+              </View>
+              <Text style={[styles.actionBtnText, { color: colors.text }]}>Tomar foto</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionBtn, { borderBottomColor: 'transparent' }]}
+              onPress={() => { setActionSheetVisible(false); void pickImage('library'); }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.actionIconWrapper, { backgroundColor: colors.accent + '15' }]}>
+                <Ionicons name="images" size={20} color={colors.accent} />
+              </View>
+              <Text style={[styles.actionBtnText, { color: colors.text }]}>Elegir de galería</Text>
+            </TouchableOpacity>
+
+            <View style={styles.actionSheetFooter}>
+              <TouchableOpacity
+                style={[styles.actionCancelBtn, { backgroundColor: cardBg }]}
+                onPress={() => setActionSheetVisible(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.actionCancelText, { color: colors.textSecondary }]}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </Modal>
   );
 }
 
-// ─── Estilos ──────────────────────────────────────────────────────────────────
-
+// ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0A0A0F' },
+  root: { flex: 1 },
 
+  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderColor: '#2A2A3F',
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 16,
   },
-  headerTitle: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
-  headerClose: { color: '#8888AA', fontSize: 18, fontWeight: '600' },
-
-  body:    { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40, gap: 4 },
-  sectionLabel: { color: '#8888AA', fontSize: 11, letterSpacing: 1.2, fontWeight: '600', textTransform: 'uppercase', marginTop: 16, marginBottom: 8 },
-  optional: { color: '#555570', fontWeight: '400' },
-
-  typeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  headerCloseBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
   },
+  headerTitle: { fontSize: 22, fontWeight: '700' },
+
+  // Body
+  body: { paddingHorizontal: 24, paddingBottom: 40 },
+  sectionLabel: {
+    fontSize: 14, fontWeight: '600',
+    marginTop: 24, marginBottom: 12,
+  },
+
+  // Type grid
+  typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   typeBtn: {
-    flexBasis: '30%',
-    flexGrow: 1,
+    flexBasis: '30%', flexGrow: 1,
     alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#2A2A3F',
-    backgroundColor: '#12121C',
-    gap: 4,
+    paddingVertical: 16, gap: 8,
+    borderRadius: 16, borderWidth: 1,
   },
-  typeBtnActive:  { borderColor: '#6C63FF', backgroundColor: '#6C63FF22' },
-  typeEmoji:      { fontSize: 22 },
-  typeLabel:      { color: '#8888AA', fontSize: 11, fontWeight: '600' },
-  typeLabelActive: { color: '#6C63FF' },
+  typeLabel: { fontSize: 13, fontWeight: '500' },
 
-  severityRow: { flexDirection: 'row', gap: 8 },
+  // Severity
+  severityRow: { flexDirection: 'row', gap: 10 },
   severityBtn: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#2A2A3F',
-    backgroundColor: '#12121C',
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 16,
   },
-  severityLabel: { color: '#8888AA', fontSize: 12, fontWeight: '600' },
+  severityLabel: { fontSize: 14, fontWeight: '600' },
 
+  // Textarea
   textarea: {
-    backgroundColor: '#12121C',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#2A2A3F',
-    color: '#FFFFFF',
-    padding: 14,
-    fontSize: 14,
-    minHeight: 80,
+    borderRadius: 16,
+    padding: 16, fontSize: 15,
+    minHeight: 100,
     textAlignVertical: 'top',
   },
 
+  // Images
   imgHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  addImgBtn: { color: '#6C63FF', fontSize: 13, fontWeight: '600' },
+  imgCounter: { fontSize: 14, fontWeight: '500', marginTop: 12 },
   imgEmpty: {
-    height: 80,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: '#2A2A3F',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 8,
+    paddingVertical: 28, borderRadius: 16,
+    borderWidth: 1.5, borderStyle: 'dashed',
+    alignItems: 'center', justifyContent: 'center',
+    gap: 14,
   },
-  imgEmptyIcon: { fontSize: 20 },
-  imgEmptyText: { color: '#8888AA', fontSize: 13 },
-
-  imgRow:     { marginTop: 8 },
-  imgThumb:   { width: 80, height: 80, borderRadius: 10, overflow: 'visible', marginRight: 8, position: 'relative' },
-  imgPreview: { width: 80, height: 80, borderRadius: 10 },
-  imgRemove:  {
-    position: 'absolute', top: -8, right: -8,
-    backgroundColor: '#EF4444', borderRadius: 10, width: 20, height: 20,
+  imgEmptyIconWrapper: {
+    width: 60, height: 60, borderRadius: 30,
     alignItems: 'center', justifyContent: 'center',
   },
-  imgRemoveText: { color: '#FFF', fontSize: 11, fontWeight: '700' },
+  imgEmptyTextContainer: { alignItems: 'center', gap: 6 },
+  imgEmptyTitle: { fontSize: 16, fontWeight: '700' },
+  imgEmptySub: { fontSize: 13, textAlign: 'center' },
+
+  imgRow: { marginTop: 4 },
+  imgRowContent: { gap: 12 },
+  imgThumb: { width: 100, height: 100, borderRadius: 16, overflow: 'visible' },
+  imgPreview: { width: 100, height: 100, borderRadius: 16 },
+  imgRemove:  {
+    position: 'absolute', top: -6, right: -6,
+    backgroundColor: '#1E1E2E', borderRadius: 12, width: 24, height: 24,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3, elevation: 4,
+  },
   imgAddThumb: {
-    width: 80, height: 80, borderRadius: 10,
-    borderWidth: 1, borderStyle: 'dashed', borderColor: '#2A2A3F',
-    alignItems: 'center', justifyContent: 'center', marginRight: 8,
+    width: 100, height: 100, borderRadius: 16,
+    borderWidth: 1, borderStyle: 'dashed',
+    alignItems: 'center', justifyContent: 'center',
   },
-  imgAddIcon: { color: '#6C63FF', fontSize: 28, fontWeight: '300' },
 
-  errorBox: { backgroundColor: '#EF444420', borderRadius: 10, borderWidth: 1, borderColor: '#EF444440', padding: 12, marginTop: 12 },
-  errorText: { color: '#EF4444', fontSize: 12 },
+  // Error
+  errorBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#EF444412', borderRadius: 12,
+    padding: 12, marginTop: 16,
+  },
+  errorText: { color: '#EF4444', fontSize: 13, flex: 1 },
 
+  // Footer
   footer: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 24, paddingTop: 16,
     borderTopWidth: 1,
-    borderColor: '#2A2A3F',
   },
-  cancelBtn: {
-    flex: 1,
-    backgroundColor: '#12121C',
-    borderRadius: 14,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2A2A3F',
-  },
-  cancelText: { color: '#8888AA', fontSize: 15, fontWeight: '600' },
   submitBtn: {
-    flex: 2,
-    backgroundColor: '#6C63FF',
-    borderRadius: 14,
-    padding: 16,
-    alignItems: 'center',
+    borderRadius: 16,
+    paddingVertical: 16, alignItems: 'center',
   },
   submitBtnDisabled: { opacity: 0.5 },
-  submitText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  submitInner: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  submitText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+
+  // Action Sheet
+  actionSheetOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  actionSheetContainer: {
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 24, paddingVertical: 24,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+  },
+  actionSheetHeader: { marginBottom: 24 },
+  actionSheetTitle: { fontSize: 20, fontWeight: '700', marginBottom: 4 },
+  actionSheetSub: { fontSize: 14 },
+  actionBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 16,
+    paddingVertical: 16, borderBottomWidth: 1,
+  },
+  actionIconWrapper: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  actionBtnText: { fontSize: 16, fontWeight: '600' },
+  actionSheetFooter: { marginTop: 16 },
+  actionCancelBtn: {
+    paddingVertical: 16, borderRadius: 16, alignItems: 'center',
+  },
+  actionCancelText: { fontSize: 16, fontWeight: '600' },
 });
