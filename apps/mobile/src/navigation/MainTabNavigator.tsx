@@ -5,6 +5,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@lib/ThemeContext';
 import { RoutesScreen } from '@features/routes/screens/RoutesScreen';
 import { TrackingScreen } from '@features/tracking/screens/TrackingScreen';
 import { TripsScreen } from '@features/trips/screens/TripsScreen';
@@ -40,23 +41,25 @@ const TAB_LABELS: Record<string, string> = {
 };
 
 export function MainTabNavigator() {
+  const { colors } = useTheme();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
-        headerStyle: { backgroundColor: '#12121C' },
-        headerTintColor: '#FFFFFF',
-        headerTitleStyle: { fontWeight: '600' },
+        headerStyle: { backgroundColor: colors.surface },
+        headerTintColor: colors.text,
+        headerTitleStyle: { fontWeight: '600' as const },
         headerShadowVisible: false,
         tabBarStyle: {
-          backgroundColor: '#12121C',
-          borderTopColor: '#2A2A3F',
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
           borderTopWidth: 1,
           paddingBottom: 4,
           height: 60,
         },
-        tabBarActiveTintColor: '#6C63FF',
-        tabBarInactiveTintColor: '#4A4A6A',
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginBottom: 2 },
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' as const, marginBottom: 2 },
         tabBarLabel: TAB_LABELS[route.name] ?? route.name,
         tabBarIcon: ({ focused, color, size }) => {
           const icons = TAB_ICONS[route.name];

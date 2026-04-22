@@ -10,6 +10,7 @@ import {
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
+import { useTheme } from '@lib/ThemeContext';
 
 type ButtonVariant = 'primary' | 'danger' | 'ghost';
 
@@ -32,9 +33,38 @@ export function Button({
   style,
   testID,
 }: ButtonProps) {
+  const { colors } = useTheme();
+
+  const getVariantStyle = (): ViewStyle => {
+    switch (variant) {
+      case 'primary': return {
+        backgroundColor: colors.accent,
+        shadowColor: colors.accent,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 12,
+        elevation: 6,
+      };
+      case 'danger': return { backgroundColor: colors.danger };
+      case 'ghost': return {
+        backgroundColor: 'transparent',
+        borderWidth: 1,
+        borderColor: colors.border,
+      };
+    }
+  };
+
+  const getLabelColor = (): string => {
+    switch (variant) {
+      case 'primary': return '#FFFFFF';
+      case 'danger':  return '#FFFFFF';
+      case 'ghost':   return colors.textSecondary;
+    }
+  };
+
   return (
     <TouchableOpacity
-      style={[styles.base, styles[variant], (disabled || loading) && styles.disabled, style]}
+      style={[styles.base, getVariantStyle(), (disabled || loading) && styles.disabled, style]}
       onPress={onPress}
       disabled={disabled || loading}
       activeOpacity={0.8}
@@ -45,7 +75,7 @@ export function Button({
       {loading ? (
         <ActivityIndicator color="#fff" size="small" />
       ) : (
-        <Text style={[styles.label, styles[`${variant}Label` as keyof typeof styles] as TextStyle]}>
+        <Text style={[styles.label, { color: getLabelColor() } as TextStyle]}>
           {label}
         </Text>
       )}
@@ -62,23 +92,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 52,
   },
-  primary: {
-    backgroundColor: '#6C63FF',
-    shadowColor: '#6C63FF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  danger: { backgroundColor: '#FF4444' },
-  ghost: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#2A2A3F',
-  },
   disabled: { opacity: 0.5 },
   label: { fontWeight: '600', fontSize: 15, letterSpacing: 0.3 },
-  primaryLabel: { color: '#FFFFFF' },
-  dangerLabel: { color: '#FFFFFF' },
-  ghostLabel: { color: '#8888AA' },
 });

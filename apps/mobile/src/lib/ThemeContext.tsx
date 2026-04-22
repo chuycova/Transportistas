@@ -4,6 +4,7 @@
 // Consumir con el hook useTheme() en cualquier componente.
 
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { DefaultTheme } from '@react-navigation/native';
 import { getBool, setBool } from '@lib/mmkv';
 
 const THEME_KEY = 'app.isDarkTheme';
@@ -25,15 +26,17 @@ export const darkColors = {
   danger:       '#EF4444',
 } as const;
 
+// Light palette inspired by the web app (shadcn/Tailwind light mode):
+//   bg = soft blue-gray page, surface = white cards, text = near-black navy
 export const lightColors = {
-  bg:           '#F5F5F7',
+  bg:           '#F4F6FB',
   surface:      '#FFFFFF',
-  surfaceAlt:   '#EAEAEE',
-  border:       '#DDDDE8',
-  borderLight:  '#CBCBD8',
-  text:         '#0A0A0F',
-  textSecondary:'#5A5A7A',
-  textMuted:    '#9A9AB0',
+  surfaceAlt:   '#EEF0F7',
+  border:       '#D8DDE8',
+  borderLight:  '#C5CCE0',
+  text:         '#0F1117',
+  textSecondary:'#4A5568',
+  textMuted:    '#8A96AE',
   accent:       '#6C63FF',
   accentAlt:    '#5A52EE',
   success:      '#059669',
@@ -42,6 +45,26 @@ export const lightColors = {
 } as const;
 
 export type AppColors = typeof darkColors;
+
+// ─── Google Maps styles ───────────────────────────────────────────────────────
+export const darkMapStyle = [
+  { elementType: 'geometry',           stylers: [{ color: '#0A0A0F' }] },
+  { elementType: 'labels.text.fill',   stylers: [{ color: '#8888AA' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#0A0A0F' }] },
+  { featureType: 'road',               elementType: 'geometry', stylers: [{ color: '#1C1C2E' }] },
+  { featureType: 'road.arterial',      elementType: 'geometry', stylers: [{ color: '#2A2A3F' }] },
+  { featureType: 'road.highway',       elementType: 'geometry', stylers: [{ color: '#3A3A5C' }] },
+  { featureType: 'water',              elementType: 'geometry', stylers: [{ color: '#060610' }] },
+  { featureType: 'poi',                stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit',            stylers: [{ visibility: 'off' }] },
+  { featureType: 'landscape.man_made', stylers: [{ visibility: 'off' }] },
+];
+
+// Light mode: minimal style — suppress clutter, use default Google Maps look
+export const lightMapStyle = [
+  { featureType: 'poi',     stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+];
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 interface ThemeContextValue {
@@ -58,11 +81,8 @@ const ThemeContext = createContext<ThemeContextValue>({
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // Leer preferencia guardada (default: dark)
   const [isDark, setIsDark] = useState<boolean>(() => {
-    // Si nunca se guardó nada, usa dark por defecto
     const stored = getBool(THEME_KEY);
-    // getBool devuelve false si no existe — distinguimos con getString
     const hasKey = getBool(THEME_KEY + '_set');
     return hasKey ? stored : true;
   });
@@ -88,4 +108,22 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 export function useTheme(): ThemeContextValue {
   return useContext(ThemeContext);
+}
+
+// ─── React Navigation theme helper ───────────────────────────────────────────
+export function useNavigationTheme() {
+  const { isDark, colors } = useTheme();
+  return {
+    ...DefaultTheme,          // ← ensures fonts.regular / fonts.medium etc. are present
+    dark: isDark,
+    colors: {
+      ...DefaultTheme.colors, // ← safe baseline so no key is ever undefined
+      primary:      colors.accent,
+      background:   colors.bg,
+      card:         colors.surface,
+      text:         colors.text,
+      border:       colors.border,
+      notification: colors.danger,
+    },
+  };
 }

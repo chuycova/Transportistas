@@ -13,6 +13,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@lib/supabase';
+import { useTheme, useNavigationTheme } from '@lib/ThemeContext';
 import { LoginScreen } from '@features/auth/screens/LoginScreen';
 import { GeneralSettingsScreen } from '@features/settings/screens/GeneralSettingsScreen';
 import { ProfileScreen } from '@features/profile/screens/ProfileScreen';
@@ -30,11 +31,12 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export function RootNavigator() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const { colors } = useTheme();
+  const navTheme = useNavigationTheme();
 
   useEffect(() => {
     void supabase.auth.getSession().then(({ data, error }) => {
       if (error) {
-        // Refresh token inválido o expirado — limpiar sesión y mostrar Login
         void supabase.auth.signOut();
         setSession(null);
       } else {
@@ -47,7 +49,6 @@ export function RootNavigator() {
       if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
         setSession(session);
       }
-      // INITIAL_SESSION con error ya lo maneja getSession arriba
       setLoading(false);
     });
 
@@ -56,14 +57,14 @@ export function RootNavigator() {
 
   if (loading) {
     return (
-      <View style={styles.splash}>
-        <ActivityIndicator size="large" color="#6C63FF" />
+      <View style={[styles.splash, { backgroundColor: colors.bg }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={navTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {session ? (
           <>
@@ -73,9 +74,9 @@ export function RootNavigator() {
               component={GeneralSettingsScreen}
               options={{
                 headerShown: true,
-                headerStyle: { backgroundColor: '#12121C' },
-                headerTintColor: '#FFFFFF',
-                headerTitleStyle: { fontWeight: '600', color: '#FFFFFF' },
+                headerStyle: { backgroundColor: colors.surface },
+                headerTintColor: colors.text,
+                headerTitleStyle: { fontWeight: '600', color: colors.text },
                 headerShadowVisible: false,
                 title: 'Ajustes Generales',
                 headerBackTitle: 'Volver',
@@ -86,8 +87,8 @@ export function RootNavigator() {
               component={ProfileScreen}
               options={{
                 headerShown: true,
-                headerStyle: { backgroundColor: '#12121C' },
-                headerTintColor: '#FFFFFF',
+                headerStyle: { backgroundColor: colors.surface },
+                headerTintColor: colors.text,
                 headerTitleStyle: { fontWeight: '600' },
                 headerShadowVisible: false,
                 title: 'Mi perfil',
@@ -106,7 +107,6 @@ export function RootNavigator() {
 const styles = StyleSheet.create({
   splash: {
     flex: 1,
-    backgroundColor: '#0A0A0F',
     justifyContent: 'center',
     alignItems: 'center',
   },
