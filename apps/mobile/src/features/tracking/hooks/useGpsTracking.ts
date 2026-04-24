@@ -143,7 +143,7 @@ export function useGpsTracking(options: GpsTrackingOptions) {
       // Notificar al backend que esta sesión pertenece a este vehículo
       // Solo emitir si vehicleId es un UUID válido (no vacío)
       if (vehicleId) {
-        emitTrackingStart(vehicleId, tenantId);
+        emitTrackingStart(vehicleId, tenantId, optionsRef.current.routeId);
       }
 
       setState((prev) => ({ ...prev, isTracking: true, error: null }));

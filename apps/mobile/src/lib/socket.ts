@@ -71,8 +71,8 @@ export function connectSocket(jwtToken: string): Socket {
  * Notifica al backend que el conductor inicia tracking.
  * Permite al backend registrar la sesión y marcar el vehículo active al desconectarse.
  */
-export function emitTrackingStart(vehicleId: string, tenantId: string): void {
-  _socket?.emit('tracking:start', { vehicleId, tenantId });
+export function emitTrackingStart(vehicleId: string, tenantId: string, routeId?: string): void {
+  _socket?.emit('tracking:start', { vehicleId, tenantId, routeId });
 }
 
 /**
@@ -113,6 +113,18 @@ export function emitPanicAlert(payload: PanicAlertPayload): boolean {
   if (!_socket?.connected) return false;
   _socket.emit('panic:alert', payload);
   return true;
+}
+
+/**
+ * Envía la ruta de navegación (Directions API) al backend para que la relaye al dashboard web.
+ * Esto permite que el web muestre la ruta real por calles, no solo una línea recta.
+ */
+export function emitNavigationRoute(
+  vehicleId: string,
+  routeId: string,
+  path: { lat: number; lng: number }[],
+): void {
+  _socket?.emit('navigation:route', { vehicleId, routeId, path });
 }
 
 /** Desconecta el socket (cuando el conductor para el tracking) */

@@ -26,8 +26,11 @@ export const MMKV_KEYS = {
   ACTIVE_VEHICLE_ID:      'activeVehicleId',
   ACTIVE_ROUTE_ID:        'activeRouteId',
   ACTIVE_ROUTE_NAME:      'activeRouteName',
-  ACTIVE_TRIP_ID:         'activeTripId',          // ID del viaje activo actual
+  ACTIVE_TRIP_ID:         'activeTripId',           // ID del viaje activo actual
   TRACKING_ACTIVE:        'trackingActive',
-  ACTIVE_ROUTE_WAYPOINTS: 'activeRouteWaypoints', // JSON: {lat,lng}[]
-  ACTIVE_ROUTE_STOPS:     'activeRouteStops',      // JSON: {name,lat,lng,order}[]
+  ACTIVE_ROUTE_WAYPOINTS: 'activeRouteWaypoints',   // JSON: {lat,lng}[]
+  ACTIVE_ROUTE_STOPS:     'activeRouteStops',        // JSON: {name,lat,lng,order}[]
+  LAST_WAYPOINT_IDX:      'lastWaypointIdx',         // índice del último waypoint al pausar
+  TRIP_IS_PAUSED:         'tripIsPaused',            // boolean — ruta pausada por el conductor
+  TRIP_PAUSED_PCT:        'tripPausedPct',           // number 0-100 — progreso al pausar
 } as const;

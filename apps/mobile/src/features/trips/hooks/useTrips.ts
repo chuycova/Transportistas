@@ -11,6 +11,7 @@ export type TripStatus =
   | 'confirmed'
   | 'in_transit'
   | 'at_destination'
+  | 'paused'
   | 'completed'
   | 'closed'
   | 'cancelled';
@@ -34,12 +35,19 @@ export interface DriverTrip {
   scheduled_at: string | null;
   started_at: string | null;
   completed_at: string | null;
+  route_started_at: string | null;
+  route_completed_at: string | null;
 
   estimated_distance_km: number | null;
   estimated_duration_min: number | null;
 
   route_id: string | null;
   vehicle_id: string | null;
+
+  // Progreso al pausar
+  progress_pct:      number | null;
+  last_waypoint_idx: number | null;
+  paused_at:         string | null;
 }
 
 const TRIP_SELECT = `
@@ -48,15 +56,25 @@ const TRIP_SELECT = `
   dest_name, dest_lat, dest_lng,
   cargo_type, container_numbers, weight_tons,
   scheduled_at, started_at, completed_at,
+  route_started_at, route_completed_at,
   estimated_distance_km, estimated_duration_min,
-  route_id, vehicle_id
+  route_id, vehicle_id,
+  progress_pct, last_waypoint_idx, paused_at
 `.trim();
 
 /** Actualiza el estado de un viaje directamente desde el cliente móvil */
 export async function updateTripStatus(
   tripId: string,
   status: TripStatus,
-  extra?: { started_at?: string; completed_at?: string },
+  extra?: {
+    started_at?: string;
+    completed_at?: string;
+    route_started_at?: string;
+    route_completed_at?: string;
+    progress_pct?: number;
+    last_waypoint_idx?: number;
+    paused_at?: string | null;
+  },
 ): Promise<void> {
   const patch: Record<string, unknown> = { status, ...extra };
   const { error } = await supabase.from('trips').update(patch).eq('id', tripId);
@@ -93,8 +111,9 @@ export function useTrips() {
       const trips = (data ?? []) as DriverTrip[];
 
       // Separar viaje activo (el más reciente en estado activo) de historial
+      // 'paused' también es activo (reanudable) para el conductor
       const active = trips.find((t) =>
-        ['confirmed', 'in_transit', 'at_destination'].includes(t.status)
+        ['confirmed', 'in_transit', 'at_destination', 'paused'].includes(t.status)
       ) ?? null;
 
       const past = trips.filter((t) =>

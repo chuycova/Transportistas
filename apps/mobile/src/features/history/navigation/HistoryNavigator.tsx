@@ -21,7 +21,12 @@ export type HistoryRoute = {
   date: string;
   duration: string;
   distance: string;
-  status: 'completed' | 'off_route';
+  status: 'completed' | 'off_route' | 'cancelled';
+  // Timestamps para desglose de tiempos
+  started_at: string | null;
+  route_started_at: string | null;
+  route_completed_at: string | null;
+  completed_at: string | null;
 };
 
 export type HistoryStackParamList = {

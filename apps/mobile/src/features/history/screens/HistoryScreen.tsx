@@ -17,25 +17,50 @@ import type { HistoryStackParamList, HistoryRoute } from '../navigation/HistoryN
 
 type Nav = NativeStackNavigationProp<HistoryStackParamList, 'HistoryMain'>;
 
+function fmtMsDuration(ms: number): string {
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 1)  return 'Justo ahora';
+  if (mins < 60) return `hace ${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `hace ${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return 'hace 1 dia';
+  return `hace ${days} dias`;
+}
+
 function tripToHistoryRoute(trip: ReturnType<typeof useTrips>['pastTrips'][0]): HistoryRoute {
   const distance = trip.actual_distance_km ?? trip.estimated_distance_km;
   const distStr  = distance ? `${distance.toFixed(1)} km` : '—';
 
+  // Duracion de la ruta asignada (route_started_at -> route_completed_at)
+  // Fallback a started_at -> completed_at si no hay datos de ruta
   let duration = '—';
-  if (trip.started_at && trip.completed_at) {
+  if (trip.route_started_at && trip.route_completed_at) {
+    const ms = new Date(trip.route_completed_at).getTime() - new Date(trip.route_started_at).getTime();
+    duration = fmtMsDuration(ms);
+  } else if (trip.started_at && trip.completed_at) {
     const ms = new Date(trip.completed_at).getTime() - new Date(trip.started_at).getTime();
-    const h  = Math.floor(ms / 3_600_000);
-    const m  = Math.floor((ms % 3_600_000) / 60_000);
-    duration = h > 0 ? `${h}h ${m}m` : `${m}m`;
+    duration = fmtMsDuration(ms);
   } else if (trip.estimated_duration_min) {
     const h = Math.floor(trip.estimated_duration_min / 60);
     const m = trip.estimated_duration_min % 60;
     duration = h > 0 ? `${h}h ${m}m` : `${m}m`;
   }
 
-  const dateStr = trip.completed_at
-    ? new Date(trip.completed_at).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
-    : (trip.scheduled_at ? new Date(trip.scheduled_at).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+  const endRef = trip.completed_at ?? trip.started_at;
+  const dateStr = endRef
+    ? new Date(endRef).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '—';
+
+  let status: HistoryRoute['status'] = 'completed';
+  if (trip.status === 'cancelled') status = 'cancelled';
 
   return {
     id:        trip.id,
@@ -43,7 +68,11 @@ function tripToHistoryRoute(trip: ReturnType<typeof useTrips>['pastTrips'][0]): 
     date:      dateStr,
     duration,
     distance:  distStr,
-    status:    trip.status === 'cancelled' ? 'off_route' : 'completed',
+    status,
+    started_at:         trip.started_at,
+    route_started_at:   trip.route_started_at,
+    route_completed_at: trip.route_completed_at,
+    completed_at:       trip.completed_at,
   };
 }
 
@@ -73,7 +102,15 @@ function formatTime(iso: string) {
 
 function RouteRow({ item, onPress }: { item: HistoryRoute; onPress: () => void }) {
   const { colors } = useTheme();
+  const isCancelled = item.status === 'cancelled';
   const isOff = item.status === 'off_route';
+  const endRef = item.completed_at ?? item.started_at;
+  const ago = endRef ? timeAgo(endRef) : '';
+
+  const badgeStyle = isCancelled ? styles.badgeCancelled : (isOff ? styles.badgeWarn : styles.badgeOk);
+  const badgeLabel = isCancelled ? 'No concluido' : (isOff ? 'Desvio' : 'Completada');
+  const badgeTextStyle = isCancelled ? styles.badgeTextCancelled : (isOff ? styles.badgeTextWarn : null);
+
   return (
     <TouchableOpacity
       style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -82,19 +119,19 @@ function RouteRow({ item, onPress }: { item: HistoryRoute; onPress: () => void }
     >
       <View style={styles.cardHeader}>
         <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{item.routeName}</Text>
-        <View style={[styles.badge, isOff ? styles.badgeWarn : styles.badgeOk]}>
-          <Text style={[styles.badgeText, isOff && styles.badgeTextWarn]}>
-            {isOff ? 'Desvío' : 'Completada'}
+        <View style={[styles.badge, badgeStyle]}>
+          <Text style={[styles.badgeText, badgeTextStyle]}>
+            {badgeLabel}
           </Text>
         </View>
       </View>
       <View style={styles.cardMeta}>
-        <Text style={[styles.metaItem, { color: colors.textSecondary }]}>📅 {item.date}</Text>
         <Text style={[styles.metaItem, { color: colors.textSecondary }]}>⏱ {item.duration}</Text>
         <Text style={[styles.metaItem, { color: colors.textSecondary }]}>📍 {item.distance}</Text>
+        {ago ? <Text style={[styles.metaItem, { color: colors.textSecondary }]}>{ago}</Text> : null}
       </View>
       <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
-        <Text style={[styles.evidenceHint, { color: colors.accent }]}>Toca para ver detalle o adjuntar evidencia</Text>
+        <Text style={[styles.evidenceHint, { color: colors.accent }]}>Toca para ver detalle</Text>
         <Text style={[styles.chevron, { color: colors.accent }]}>›</Text>
       </View>
     </TouchableOpacity>
@@ -327,8 +364,10 @@ const styles = StyleSheet.create({
   },
   badgeOk:   { backgroundColor: '#22C55E22' },
   badgeWarn: { backgroundColor: '#F59E0B22' },
+  badgeCancelled: { backgroundColor: '#F5900B22' },
   badgeText:     { color: '#22C55E', fontSize: 11, fontWeight: '600' },
   badgeTextWarn: { color: '#F59E0B' },
+  badgeTextCancelled: { color: '#F5900B' },
 
   alertIconWrapper: {
     width: 36,

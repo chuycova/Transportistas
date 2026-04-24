@@ -43,8 +43,6 @@ export function usePingSync() {
 
         if (!pendingPings.length) break;
 
-        console.log(`[PingSync] Drenando ${pendingPings.length} pings de la cola...`);
-
         let batchFailed = false;
 
         for (const ping of pendingPings) {
@@ -97,7 +95,6 @@ export function usePingSync() {
         if (batchFailed) break;
       }
 
-      console.log('[PingSync] Sync completado');
     } finally {
       isSyncing.current = false;
     }

@@ -1,7 +1,7 @@
 // ─── SettingsScreen.tsx ───────────────────────────────────────────────────────
 // Ajustes del conductor: info de sesión y cierre de sesión.
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -12,21 +12,17 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { signOut, supabase } from '@lib/supabase';
+import { signOut } from '@lib/supabase';
+import { useCurrentUser } from '@lib/useCurrentUser';
 import { useTheme } from '@lib/ThemeContext';
-import type { User } from '@supabase/supabase-js';
 
 type SettingsNavigationProp = NativeStackNavigationProp<any>;
 
 export function SettingsScreen() {
-  const [user, setUser] = useState<User | null>(null);
+  const user = useCurrentUser();
   const [loading, setLoading] = useState(false);
   const navigation = useNavigation<SettingsNavigationProp>();
   const { colors } = useTheme();
-
-  useEffect(() => {
-    void supabase.auth.getUser().then(({ data }) => setUser(data.user));
-  }, []);
 
   const handleLogout = () => {
     Alert.alert(
