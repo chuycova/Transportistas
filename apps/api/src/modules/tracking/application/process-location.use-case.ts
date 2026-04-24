@@ -4,7 +4,7 @@
 //   2. Cuando el buffer se vacía → road snap → detectDeviation → persist → broadcast
 
 import { Injectable, Logger, Inject, OnModuleInit } from '@nestjs/common';
-import { detectDeviation } from '@zona-zero/domain';
+import { detectDeviation, haversineDistanceM } from '@zona-zero/domain';
 import type {
   CreateLocationInput,
   LocationWebSocketPayload,
@@ -52,6 +52,16 @@ export class ProcessLocationUseCase implements OnModuleInit {
   /** Estado de geocerca por vehículo: vehicleId → Set de geofenceIds actualmente dentro */
   private readonly vehicleGeofenceState = new Map<string, Set<string>>();
 
+  /**
+   * Estado "en ruta" por vehículo. false = el conductor aún va camino al
+   * primer punto de la ruta; true = ya llegó y la detección de desvío está activa.
+   * Se limpia cuando el conductor detiene tracking o se desconecta.
+   */
+  private readonly reachedStartMap = new Map<string, boolean>();
+
+  /** Distancia máxima al primer waypoint para considerarlo "alcanzado" */
+  private static readonly REACHED_START_THRESHOLD_M = 100;
+
   constructor(
     @Inject(LOCATION_REPOSITORY) private readonly locationRepo: ILocationRepository,
     @Inject(ROUTE_REPOSITORY) private readonly routeRepo: IRouteRepository,
@@ -63,6 +73,13 @@ export class ProcessLocationUseCase implements OnModuleInit {
     private readonly batchBuffer: PingBatchBufferService,
   ) {}
 
+  /** Limpia estado en memoria de un vehiculo al desconectarse/detener tracking */
+  clearVehicleState(vehicleId: string): void {
+    this.reachedStartMap.delete(vehicleId);
+    this.vehicleGeofenceState.delete(vehicleId);
+    this.logger.debug(`Estado limpiado para vehiculo ${vehicleId}`);
+  }
+
   /** Registrar callbacks al iniciar el módulo */
   onModuleInit() {
     this.batchBuffer.setFlushCallback((pings) => this.processBatch(pings));
@@ -70,6 +87,8 @@ export class ProcessLocationUseCase implements OnModuleInit {
     this.gateway.setProcessPingCallback((ping) => this.execute(ping));
     // Conectar el handler de pánico vía socket
     this.gateway.setPanicCallback((p) => this.handlePanic(p));
+    // Conectar cleanup de estado en memoria al desconectar/detener tracking
+    this.gateway.setClearVehicleStateCallback((vehicleId) => this.clearVehicleState(vehicleId));
   }
 
   /** Maneja una alerta de pánico (llamado desde socket o REST controller) */
@@ -146,37 +165,67 @@ export class ProcessLocationUseCase implements OnModuleInit {
     let deviationM = 0;
 
     if (ping.routeId) {
-      const vehicle = await this.vehicleRepo.findById(ping.vehicleId, ping.tenantId);
-      let driverFcmToken: string | undefined;
-      if (vehicle?.assignedDriverId) {
-        driverFcmToken = await this.getDriverFcmToken(vehicle.assignedDriverId);
+      // ── Gate de "en ruta": solo detectar desvío después de llegar al primer waypoint ──
+      const hasReachedStart = this.reachedStartMap.get(ping.vehicleId) ?? false;
+
+      if (!hasReachedStart) {
+        // Verificar si el conductor llegó al primer punto de la ruta
+        const route = await this.routeRepo.findById(ping.routeId, ping.tenantId);
+        if (route && route.polylinePoints.length > 0) {
+          const firstWp = route.polylinePoints[0]!;
+          const distToStart = haversineDistanceM(snappedCoord, firstWp);
+          if (distToStart <= ProcessLocationUseCase.REACHED_START_THRESHOLD_M) {
+            this.reachedStartMap.set(ping.vehicleId, true);
+            this.logger.log(
+              `Vehículo ${ping.vehicleId}: llegó al inicio de ruta (${Math.round(distToStart)}m). Detección de desvío ACTIVADA.`,
+            );
+          } else {
+            this.logger.debug(
+              `Vehículo ${ping.vehicleId}: en camino al inicio (${Math.round(distToStart)}m). Desvío desactivado.`,
+            );
+          }
+        }
       }
 
-      const deviationResult = await detectDeviation(
-        {
-          vehicleId: ping.vehicleId,
-          tenantId: ping.tenantId,
-          routeId: ping.routeId,
-          coordinate: snappedCoord,
-          thresholdM,
-        },
-        {
-          routeRepository: this.routeRepo,
-          alertRepository: this.alertRepo,
-          vehicleRepository: this.vehicleRepo,
-          notificationService: this.notificationSvc,
-          driverFcmToken,
-        },
-      );
+      // Solo detectar desvío si el conductor ya llegó al primer punto
+      if (this.reachedStartMap.get(ping.vehicleId)) {
+        const vehicle = await this.vehicleRepo.findById(ping.vehicleId, ping.tenantId);
+        let driverFcmToken: string | undefined;
+        if (vehicle?.assignedDriverId) {
+          driverFcmToken = await this.getDriverFcmToken(vehicle.assignedDriverId);
+        }
 
-      isOffRoute = deviationResult.isOffRoute;
-      deviationM = deviationResult.deviationM;
+        const deviationResult = await detectDeviation(
+          {
+            vehicleId: ping.vehicleId,
+            tenantId: ping.tenantId,
+            routeId: ping.routeId,
+            coordinate: snappedCoord,
+            thresholdM,
+          },
+          {
+            routeRepository: this.routeRepo,
+            alertRepository: this.alertRepo,
+            vehicleRepository: this.vehicleRepo,
+            notificationService: this.notificationSvc,
+            driverFcmToken,
+          },
+        );
 
-      if (isOffRoute && vehicle?.status === 'active') {
-        await this.vehicleRepo.updateStatus(ping.vehicleId, ping.tenantId, 'off_route');
-      } else if (!isOffRoute && (vehicle?.status === 'off_route' || vehicle?.status === 'inactive')) {
-        // Activa el vehículo tanto al retornar de un desvío como al iniciar tracking
-        await this.vehicleRepo.updateStatus(ping.vehicleId, ping.tenantId, 'active');
+        isOffRoute = deviationResult.isOffRoute;
+        deviationM = deviationResult.deviationM;
+
+        if (isOffRoute && vehicle?.status === 'active') {
+          await this.vehicleRepo.updateStatus(ping.vehicleId, ping.tenantId, 'off_route');
+        } else if (!isOffRoute && (vehicle?.status === 'off_route' || vehicle?.status === 'inactive')) {
+          await this.vehicleRepo.updateStatus(ping.vehicleId, ping.tenantId, 'active');
+        }
+      } else {
+        // Pre-inicio: activar vehículo pero NO detectar desvío
+        const vehicle = await this.vehicleRepo.findById(ping.vehicleId, ping.tenantId);
+        if (vehicle?.status === 'inactive') {
+          await this.vehicleRepo.updateStatus(ping.vehicleId, ping.tenantId, 'active');
+        }
       }
     }
 

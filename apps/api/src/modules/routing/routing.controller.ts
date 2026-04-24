@@ -143,9 +143,10 @@ export class RoutingController {
   /**
    * PATCH /api/v1/routes/:id/assign-driver
    *
-   * Asigna una ruta a un conductor: enlaza el vehículo del conductor con la ruta.
+   * Asigna una ruta a un conductor: crea un registro en route_assignments y
+   * mantiene routes.vehicle_id por backward-compat.
+   * Una misma ruta puede tener múltiples asignaciones activas (distintos conductores).
    * Solo monitores (admin, operator) pueden hacer esta operación.
-   * El conductor se selecciona por `driverId` (profiles.id).
    */
   @Patch(':id/assign-driver')
   @Roles('admin', 'super_admin', 'operator')
@@ -153,7 +154,9 @@ export class RoutingController {
   async assignDriver(
     @Param('id') routeId: string,
     @Body('driverId') driverId: string,
+    @Body('notes') notes: string | undefined,
     @TenantId() tenantId: string,
+    @AuthUser() user: AuthenticatedUser,
   ): Promise<void> {
     const adminDb = this.adminClient;
 
@@ -186,7 +189,32 @@ export class RoutingController {
       );
     }
 
-    // 3. Enlazar la ruta al vehículo del conductor
+    // 3. Deactivate any existing active assignment for this driver+route combo
+    //    (same driver re-assigned to the same route counts as a new assignment)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (adminDb as any)
+      .from('route_assignments')
+      .update({ is_active: false })
+      .eq('route_id', routeId)
+      .eq('driver_id', driverId)
+      .eq('is_active', true);
+
+    // 4. Insert new assignment record
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: assignError } = await (adminDb as any)
+      .from('route_assignments')
+      .insert({
+        tenant_id:   tenantId,
+        route_id:    routeId,
+        vehicle_id:  vehicle.id,
+        driver_id:   driverId,
+        assigned_by: user.id,
+        notes:       notes ?? null,
+      });
+
+    if (assignError) throw new Error(assignError.message);
+
+    // 5. Backward-compat: keep routes.vehicle_id updated (last assigner wins)
     const { error } = await adminDb
       .from('routes')
       .update({ vehicle_id: vehicle.id })
@@ -196,7 +224,7 @@ export class RoutingController {
     if (error) throw new Error(error.message);
 
     this.logger.log(
-      `Route ${routeId} assigned to driver ${driverId} via vehicle ${vehicle.id}`,
+      `Route ${routeId} assigned to driver ${driverId} via vehicle ${vehicle.id} (by ${user.id})`,
     );
   }
 }

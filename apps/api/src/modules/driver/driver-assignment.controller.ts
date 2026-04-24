@@ -138,8 +138,8 @@ export class DriverAssignmentController {
       };
     }
 
-    // 3. Todas las rutas del vehículo (no archivadas)
-    const { data: routesRaw, error: routeError } = await db
+    // 3a. Rutas via legacy routes.vehicle_id (backward-compat)
+    const { data: routesByVehicle, error: routeError } = await db
       .from('routes_with_polyline')
       .select(`
         id, name, origin_name, dest_name, status,
@@ -149,6 +149,35 @@ export class DriverAssignmentController {
       .eq('vehicle_id', vehicle.id)
       .in('status', ['active', 'draft'])
       .order('status', { ascending: false }); // active primero
+
+    if (routeError) {
+      this.logger.warn(`Route lookup error for vehicle ${vehicle.id}: ${routeError.message}`);
+    }
+
+    // 3b. Rutas via route_assignments (new system: assigned to this driver)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: assignmentRows } = await (db as any)
+      .from('route_assignments')
+      .select('route_id')
+      .eq('driver_id', user.id)
+      .eq('is_active', true) as { data: Array<{ route_id: string }> | null };
+
+    const assignedRouteIds = (assignmentRows ?? []).map((a) => a.route_id);
+
+    let routesByAssignment: RawRoute[] = [];
+    if (assignedRouteIds.length > 0) {
+      const { data: assignedRoutes } = await db
+        .from('routes_with_polyline')
+        .select(`
+          id, name, origin_name, dest_name, status,
+          total_distance_m, estimated_duration_s, deviation_threshold_m,
+          polyline_coords, stops
+        `)
+        .in('id', assignedRouteIds)
+        .in('status', ['active', 'draft']);
+
+      routesByAssignment = (assignedRoutes ?? []) as unknown as RawRoute[];
+    }
 
     type RawRoute = {
       id: string;
@@ -163,10 +192,15 @@ export class DriverAssignmentController {
       stops: Array<{ name: string; address?: string; lat: number; lng: number; order_index: number }> | null;
     };
 
-    const rawList = (routesRaw ?? []) as unknown as RawRoute[];
-
-    if (routeError) {
-      this.logger.warn(`Route lookup error for vehicle ${vehicle.id}: ${routeError.message}`);
+    // 3c. Merge and deduplicate by route ID
+    const rawByVehicle = (routesByVehicle ?? []) as unknown as RawRoute[];
+    const seenIds = new Set<string>();
+    const rawList: RawRoute[] = [];
+    for (const r of [...rawByVehicle, ...routesByAssignment]) {
+      if (!seenIds.has(r.id)) {
+        seenIds.add(r.id);
+        rawList.push(r);
+      }
     }
 
     // 4. Trips activamente en curso para este conductor.
@@ -217,7 +251,7 @@ export class DriverAssignmentController {
       };
     };
 
-    // Solo devolver rutas que no están bloqueadas por un trip activo o completado hoy
+    // Solo devolver rutas que no están bloqueadas por un trip activo
     const routes = rawList
       .filter((r) => !blockedRouteIds.has(r.id))
       .map(parseRoute);
