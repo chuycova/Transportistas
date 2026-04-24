@@ -17,6 +17,7 @@ out/
 .env.*
 !.env.example
 *.local
+*.local.md
 
 # Supabase local
 supabase/.temp/
@@ -91,3 +92,5 @@ implementation_plan.md
 # Documentos de referencia binarios (PDFs, etc.)
 Diccionario-de-Datos-Puertos3.pdf
 *.local.pdf
+DUDAS.md
+REFACTOR_PLAN.md
