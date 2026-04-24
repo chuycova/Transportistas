@@ -15,7 +15,7 @@ import {
 import {
   Play, Square, RotateCcw, Clock, Truck, AlertTriangle,
   Navigation, Flag, Calendar, MapPin, ChevronRight,
-  CheckCircle2, Package,
+  CheckCircle2, Package, XCircle,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useVehicles } from '../vehicles/use-vehicles';
@@ -77,8 +77,10 @@ function MapBoundsFitter({ points }: { points: HistPoint[] }) {
 // ─── Completed Trip Card ──────────────────────────────────────────────────────
 
 function CompletedTripCard({ trip, onClick }: { trip: TripRow; onClick: () => void }) {
-  const duration = trip.started_at && trip.completed_at
-    ? fmtDuration(trip.started_at, trip.completed_at)
+  const isCancelled = trip.status === 'cancelled';
+  const endTime = trip.completed_at ?? trip.started_at;
+  const duration = trip.started_at && endTime
+    ? fmtDuration(trip.started_at, endTime)
     : '—';
 
   return (
@@ -88,8 +90,12 @@ function CompletedTripCard({ trip, onClick }: { trip: TripRow; onClick: () => vo
       className="group flex items-start gap-4 w-full rounded-2xl border border-border/50 bg-card/60 p-4 text-left transition-all hover:shadow-lg hover:shadow-black/10 hover:border-border/80"
     >
       {/* Icon */}
-      <div className="flex-shrink-0 flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-        <CheckCircle2 className="h-5 w-5" />
+      <div className={`flex-shrink-0 flex h-10 w-10 items-center justify-center rounded-xl border ${
+        isCancelled
+          ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+          : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+      }`}>
+        {isCancelled ? <XCircle className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}
       </div>
 
       {/* Info */}
@@ -98,8 +104,12 @@ function CompletedTripCard({ trip, onClick }: { trip: TripRow; onClick: () => vo
           <p className="font-semibold text-sm truncate">
             {trip.route?.name ?? `${trip.origin_name} → ${trip.dest_name}`}
           </p>
-          <span className="flex-shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
-            Completado
+          <span className={`flex-shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+            isCancelled
+              ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+              : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+          }`}>
+            {isCancelled ? 'No concluido' : 'Completado'}
           </span>
           {trip.code && (
             <span className="text-[10px] text-muted-foreground font-mono">{trip.code}</span>
@@ -356,8 +366,8 @@ function MapReplayView({ initialVehicleId }: { initialVehicleId?: string }) {
 
 export function HistorialPage() {
   const { data: trips = [], isLoading } = useTrips();
-  const completedTrips = trips.filter(
-    (t) => t.status === 'completed' || t.status === 'closed'
+  const pastTrips = trips.filter(
+    (t) => t.status === 'completed' || t.status === 'closed' || t.status === 'cancelled'
   );
 
   const [view, setView] = useState<'trips' | 'map'>('trips');
@@ -369,8 +379,8 @@ export function HistorialPage() {
   };
 
   // Aggregate stats
-  const totalDistKm = completedTrips.reduce((s, t) => s + (t.actual_distance_km ?? t.estimated_distance_km ?? 0), 0);
-  const totalDurMin = completedTrips.reduce((s, t) => {
+  const totalDistKm = pastTrips.reduce((s, t) => s + (t.actual_distance_km ?? t.estimated_distance_km ?? 0), 0);
+  const totalDurMin = pastTrips.reduce((s, t) => {
     if (!t.started_at || !t.completed_at) return s;
     return s + (new Date(t.completed_at).getTime() - new Date(t.started_at).getTime()) / 60_000;
   }, 0);
@@ -398,10 +408,10 @@ export function HistorialPage() {
             }`}
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
-            Viajes completados
-            {completedTrips.length > 0 && (
+            Viajes realizados
+            {pastTrips.length > 0 && (
               <span className="rounded-full bg-emerald-500/20 text-emerald-400 px-1.5 text-[10px] font-bold">
-                {completedTrips.length}
+                {pastTrips.length}
               </span>
             )}
           </button>
@@ -429,22 +439,22 @@ export function HistorialPage() {
             </div>
           )}
 
-          {!isLoading && completedTrips.length === 0 && (
+          {!isLoading && pastTrips.length === 0 && (
             <div className="flex h-64 flex-col items-center justify-center gap-3 text-muted-foreground">
               <Package className="h-12 w-12 opacity-15" />
-              <p className="text-sm font-medium">Sin viajes completados aún</p>
+              <p className="text-sm font-medium">Sin viajes registrados aún</p>
               <p className="text-xs text-muted-foreground/60 text-center max-w-xs">
-                Los viajes completados por los conductores desde la app móvil aparecerán aquí.
+                Los viajes realizados por los conductores desde la app móvil aparecerán aquí.
               </p>
             </div>
           )}
 
-          {!isLoading && completedTrips.length > 0 && (
+          {!isLoading && pastTrips.length > 0 && (
             <>
               {/* Aggregate stats */}
               <div className="mb-5 grid grid-cols-3 gap-3">
                 {[
-                  { label: 'Viajes completados', value: completedTrips.length, unit: '', color: 'text-emerald-400' },
+                  { label: 'Viajes realizados', value: pastTrips.length, unit: '', color: 'text-emerald-400' },
                   { label: 'Distancia total', value: totalDistKm.toFixed(1), unit: ' km', color: 'text-foreground' },
                   { label: 'Tiempo en ruta', value: totalDurMin >= 60 ? `${Math.floor(totalDurMin / 60)}h ${Math.round(totalDurMin % 60)}m` : `${Math.round(totalDurMin)} min`, unit: '', color: 'text-foreground' },
                 ].map((s) => (
@@ -457,7 +467,7 @@ export function HistorialPage() {
 
               {/* Trip list */}
               <div className="flex flex-col gap-2">
-                {completedTrips.map((trip) => (
+                {pastTrips.map((trip) => (
                   <CompletedTripCard
                     key={trip.id}
                     trip={trip}

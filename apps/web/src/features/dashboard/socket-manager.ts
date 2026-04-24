@@ -17,6 +17,9 @@ export function useSocketManager() {
   const updateVehicle = useTrackingStore((s) => s.updateVehicleLocation);
   const appendTrail = useTrackingStore((s) => s.appendTrail);
   const setConnected = useTrackingStore((s) => s.setConnected);
+  const setActiveVehicleRoute = useTrackingStore((s) => s.setActiveVehicleRoute);
+  const setNavRoute = useTrackingStore((s) => s.setNavRoute);
+  const clearVehicleTrail = useTrackingStore((s) => s.clearVehicleTrail);
 
   useEffect(() => {
     if (!session?.access_token) {
@@ -40,6 +43,13 @@ export function useSocketManager() {
       if (tenantId) socket?.emit('join:tenant', { tenantId });
     });
 
+    // Re-unirse al room del tenant después de una reconexión automática
+    // (p. ej. si el backend se reinició o hubo un corte de red)
+    socket.io.on('reconnect', () => {
+      setConnected(true);
+      if (tenantId) socket?.emit('join:tenant', { tenantId });
+    });
+
     socket.on('disconnect', () => setConnected(false));
 
     socket.on('exception', (error: unknown) => {
@@ -48,12 +58,15 @@ export function useSocketManager() {
 
     socket.on('location:update', (payload: LocationWebSocketPayload) => {
       updateVehicle(payload);
-      appendTrail(payload.v, payload.lat, payload.lng);
+      appendTrail(payload.v, payload.lat, payload.lng, payload.off);
     });
 
     socket.on('alert:deviation', (data: { vehicleId: string; deviationM: number; timestamp: string }) => {
+      const dist = data.deviationM >= 1000
+        ? `${(data.deviationM / 1000).toFixed(1)} km`
+        : `${Math.round(data.deviationM)} m`;
       toast.warning('Desvío detectado', {
-        description: `Vehículo fuera de ruta por ${Math.round(data.deviationM)} m`,
+        description: `Vehículo fuera de ruta por ${dist}`,
         duration: 8000,
       });
     });
@@ -81,10 +94,28 @@ export function useSocketManager() {
 
     socket.on('alert:geofence', (data: { vehicleId: string; eventType: 'geofence_entry' | 'geofence_exit'; geofenceName: string; timestamp: string }) => {
       const isEntry = data.eventType === 'geofence_entry';
-      toast.info(isEntry ? '📍 Entrada a geocerca' : '📍 Salida de geocerca', {
+      toast.info(isEntry ? 'Entrada a geocerca' : 'Salida de geocerca', {
         description: `Vehículo ${data.vehicleId} ${isEntry ? 'entró a' : 'salió de'} "${data.geofenceName}"`,
         duration: 6000,
       });
+    });
+
+    socket.on('tracking:started', (data: { vehicleId: string; routeId?: string; timestamp: string }) => {
+      toast.info('Conductor en camino', {
+        description: `El conductor del vehículo ${data.vehicleId} inició la ruta. En camino al primer punto.`,
+        duration: 6000,
+      });
+      // Limpiar trail del viaje anterior para que no se dibuje como línea residual
+      clearVehicleTrail(data.vehicleId);
+      if (data.routeId) {
+        setActiveVehicleRoute(data.vehicleId, data.routeId);
+      }
+    });
+
+    socket.on('navigation:route', (data: { vehicleId: string; routeId: string; path: { lat: number; lng: number }[] }) => {
+      if (data.path?.length >= 2) {
+        setNavRoute(data.vehicleId, data.path);
+      }
     });
 
     return () => {
@@ -92,7 +123,7 @@ export function useSocketManager() {
       socket = null;
       setConnected(false);
     };
-  }, [session?.access_token, session?.user.user_metadata?.tenant_id, updateVehicle, appendTrail, setConnected]);
+  }, [session?.access_token, session?.user.user_metadata?.tenant_id, updateVehicle, appendTrail, setConnected, setActiveVehicleRoute, setNavRoute, clearVehicleTrail]);
 }
 
 export function SocketInitialize() {

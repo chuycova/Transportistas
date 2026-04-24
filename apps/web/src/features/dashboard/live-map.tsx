@@ -310,6 +310,8 @@ export function LiveMap() {
 
   const liveVehicles   = useTrackingStore((s) => s.vehicles);
   const trails         = useTrackingStore((s) => s.trails);
+  const activeRoutes   = useTrackingStore((s) => s.activeRoutes);
+  const navRoutes      = useTrackingStore((s) => s.navRoutes);
   const updateVehicle  = useTrackingStore((s) => s.updateVehicleLocation);
   const appendTrail    = useTrackingStore((s) => s.appendTrail);
   const isConnected    = useTrackingStore((s) => s.isConnected);
@@ -371,8 +373,9 @@ export function LiveMap() {
   liveList.filter((v) => !v.off).forEach((v) => notifiedRef.current.delete(v.v));
 
   // ── Route consumption: una ruta activa por vehículo ───────────────────────
-  // Asocia cada vehículo con la ruta activa más cercana y la divide en
-  // segmento recorrido (verde) y pendiente (azul)
+  // Asocia cada ruta con su vehículo y divide en segmento recorrido/pendiente
+  // SOLO para la ruta que el vehículo está activamente trackeando
+  const activeRouteIds = new Set(Object.values(activeRoutes));
   const routeSegments = routes
     .filter((r) => r.status === 'active' && r.polyline_coords)
     .flatMap((r) => {
@@ -380,19 +383,14 @@ export function LiveMap() {
         ([lng, lat]) => ({ lat, lng }),
       );
 
-      // Buscar vehículo asignado a esta ruta (coincide con routeId en su estado)
-      // Por ahora usamos el vehículo más cercano al primer punto de la ruta
-      const firstPt = polyline[0];
-      if (!firstPt) return [];
+      if (!polyline[0]) return [];
 
-      const assignedVehicle = liveList
-        .filter((v) => !v.off)   // solo los que están en ruta
-        .sort((a, b) =>
-          haversineMeters(firstPt, a) - haversineMeters(firstPt, b),
-        )[0];
+      // Usar el vehículo REALMENTE asignado y que esté activamente trackeando ESTA ruta
+      const assignedVehicle = r.vehicle_id ? liveVehicles[r.vehicle_id] : undefined;
+      const isActivelyTracked = activeRouteIds.has(r.id);
 
-      if (!assignedVehicle) {
-        // Sin vehículo asignado → mostrar ruta completa como pendiente
+      if (!assignedVehicle || !isActivelyTracked) {
+        // Sin vehículo activo en ESTA ruta → ruta completa como pendiente
         return [{ id: r.id, consumed: [] as LatLng[], remaining: polyline }];
       }
 
@@ -405,10 +403,21 @@ export function LiveMap() {
     ? { lat: liveList[0].lat, lng: liveList[0].lng }
     : DEFAULT_CENTER;
 
-  // ── Estado del mapa ───────────────────────────────────────────────
+  // ── Estado del mapa (isDark persiste en localStorage) ────────────
   const [isSatellite, setIsSatellite] = useState(false);
   const [showTraffic, setShowTraffic] = useState(true);
-  const [isDark,      setIsDark]      = useState(true);
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    const stored = localStorage.getItem('zz-map-dark');
+    return stored !== null ? stored === '1' : true;
+  });
+  const toggleDark = useCallback(() => {
+    setIsDark((prev) => {
+      const next = !prev;
+      localStorage.setItem('zz-map-dark', next ? '1' : '0');
+      return next;
+    });
+  }, []);
 
   return (
     <div className="absolute inset-0 bg-card">
@@ -418,7 +427,7 @@ export function LiveMap() {
         {/* Toggle tema oscuro/claro */}
         <button
           type="button"
-          onClick={() => setIsDark((d) => !d)}
+          onClick={toggleDark}
           className="flex items-center justify-center rounded-lg px-2.5 py-1.5 shadow-lg border bg-card/95 border-border/70 text-foreground hover:bg-card transition-all"
           title={isDark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
           aria-label={isDark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
@@ -527,7 +536,7 @@ export function LiveMap() {
             <MapRotationControls isDark={isDark} />
             {showTraffic && <TrafficLayer />}
 
-            {/* Segmento RECORRIDO de cada ruta (verde semitransparente) */}
+            {/* Segmento RECORRIDO de cada ruta — verde semitransparente */}
             {routeSegments.map(({ id, consumed }) =>
               consumed.length > 1 ? (
                 <Polyline
@@ -540,33 +549,83 @@ export function LiveMap() {
               ) : null,
             )}
 
-            {/* Segmento PENDIENTE de cada ruta (índigo sólido) */}
+            {/* Segmento PENDIENTE de cada ruta — naranja sólido (ruta asignada) */}
             {routeSegments.map(({ id, remaining }) =>
               remaining.length > 1 ? (
                 <Polyline
                   key={`remaining-${id}`}
                   path={remaining}
-                  strokeColor="#6366f1"
-                  strokeWeight={4}
-                  strokeOpacity={0.85}
+                  strokeColor="#f97316"
+                  strokeWeight={5}
+                  strokeOpacity={0.9}
                 />
               ) : null,
             )}
 
-            {/* Trails de posición (breadcrumb) por vehículo */}
+            {/* Ruta de navegación: vehículo → primer punto de la ruta asignada */}
+            {/* Azul eléctrico para distinguirse de la ruta asignada (naranja) y de los caminos */}
+            {Object.entries(activeRoutes).map(([vehicleId, routeId]) => {
+              const vehicleLive = liveVehicles[vehicleId];
+              if (!vehicleLive) return null;
+              const route = routes.find((r) => r.id === routeId);
+              if (!route || !route.polyline_coords) return null;
+              const coords = route.polyline_coords as [number, number][];
+              if (!coords.length) return null;
+              const firstWp = { lat: coords[0]![1], lng: coords[0]![0] };
+              // Solo mostrar si el vehículo está lejos del primer punto
+              const dist = haversineMeters(firstWp, vehicleLive);
+              if (dist < 150) return null;
+
+              // Preferir polyline real de Directions API si está disponible
+              const navPath = navRoutes[vehicleId];
+              const path = navPath && navPath.length >= 2
+                ? navPath
+                : [{ lat: vehicleLive.lat, lng: vehicleLive.lng }, firstWp];
+
+              return (
+                <Polyline
+                  key={`nav-start-${vehicleId}`}
+                  path={path}
+                  strokeColor="#3b82f6"
+                  strokeWeight={6}
+                  strokeOpacity={1.0}
+                  geodesic
+                />
+              );
+            })}
+
+            {/* Trails de posición (breadcrumb) por vehículo — segmentados por on/off route */}
             {liveList.map((v) => {
               const trail = trails[v.v];
               if (!trail || trail.length < 2) return null;
-              const color = vehicleMap[v.v]?.color ?? '#6366f1';
-              return (
+              const baseColor = vehicleMap[v.v]?.color ?? '#6366f1';
+              // Segmentar trail en tramos contiguos por estado off-route
+              const segments: { off: boolean; path: { lat: number; lng: number }[] }[] = [];
+              let currentOff = trail[0]!.off ?? false;
+              let currentPath: { lat: number; lng: number }[] = [{ lat: trail[0]!.lat, lng: trail[0]!.lng }];
+              for (let i = 1; i < trail.length; i++) {
+                const pt = trail[i]!;
+                const ptOff = pt.off ?? false;
+                if (ptOff !== currentOff) {
+                  // Cerrar segmento anterior (incluir punto de transición para continuidad)
+                  currentPath.push({ lat: pt.lat, lng: pt.lng });
+                  segments.push({ off: currentOff, path: currentPath });
+                  currentOff = ptOff;
+                  currentPath = [{ lat: pt.lat, lng: pt.lng }];
+                } else {
+                  currentPath.push({ lat: pt.lat, lng: pt.lng });
+                }
+              }
+              if (currentPath.length >= 2) segments.push({ off: currentOff, path: currentPath });
+              return segments.map((seg, si) => (
                 <Polyline
-                  key={`trail-${v.v}`}
-                  path={trail}
-                  strokeColor={color}
-                  strokeWeight={3}
-                  strokeOpacity={0.45}
+                  key={`trail-${v.v}-${si}`}
+                  path={seg.path}
+                  strokeColor={seg.off ? '#ef4444' : baseColor}
+                  strokeWeight={seg.off ? 4 : 3}
+                  strokeOpacity={seg.off ? 0.75 : 0.45}
                 />
-              );
+              ));
             })}
 
             {/* Markers de vehículos en vivo */}

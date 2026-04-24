@@ -11,13 +11,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Route, MapPin, Clock, Ruler, AlertTriangle,
   Car, User, CheckCircle2, Circle, Loader2, Pencil,
-  Maximize2, Minimize2, Navigation,
+  Maximize2, Minimize2, Navigation, History,
 } from 'lucide-react';
 import {
   APIProvider, Map as GMap, AdvancedMarker, Polyline,
 } from '@vis.gl/react-google-maps';
 import {
-  useRoute, useUpdateRouteStatus, useDeleteRoute,
+  useRoute, useUpdateRouteStatus, useDeleteRoute, useRouteAssignments,
 } from './use-routes';
 import {
   RouteSettingsSection, CheckpointsSection, TollBoothsSection, RouteAlternativesSection,
@@ -175,6 +175,14 @@ function MapLegend({ routeColor }: { routeColor: string }) {
         <div className="h-0.5 w-6 rounded-full bg-emerald-400" />
         <span className="text-[10px] text-foreground">Recorrido conductor</span>
       </div>
+      <div className="flex items-center gap-2">
+        <div className="h-0.5 w-6 rounded-full bg-red-400" />
+        <span className="text-[10px] text-foreground">Desvio de ruta</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="h-0.5 w-6 rounded-full bg-cyan-400" />
+        <span className="text-[10px] text-foreground">En camino al inicio</span>
+      </div>
     </div>
   );
 }
@@ -193,8 +201,12 @@ export function RouteDetailPage() {
   const deleteRoute   = useDeleteRoute();
 
   // Live tracking store para trails en tiempo real
-  const liveVehicles = useTrackingStore((s) => s.vehicles);
-  const trails       = useTrackingStore((s) => s.trails);
+  const liveVehicles  = useTrackingStore((s) => s.vehicles);
+  const trails        = useTrackingStore((s) => s.trails);
+  const activeRoutes  = useTrackingStore((s) => s.activeRoutes);
+  const navRoutes     = useTrackingStore((s) => s.navRoutes);
+
+  const { data: assignments = [] } = useRouteAssignments(id);
 
   const [assignOpen,    setAssignOpen]    = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -443,6 +455,68 @@ export function RouteDetailPage() {
                 )}
               </div>
 
+              {/* ── Historial de asignaciones ── */}
+              {assignments.length > 0 && (
+                <div className="rounded-xl border border-border/50 bg-card/60 p-4">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium mb-3 flex items-center gap-1.5">
+                    <History className="h-3 w-3" /> Historial de asignaciones
+                  </p>
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-0.5">
+                    {assignments.map((a) => {
+                      const aVehicle = vehicleMap[a.vehicle_id];
+                      const aDriver  = userMap[a.driver_id];
+                      const aBy      = a.assigned_by ? userMap[a.assigned_by] : null;
+                      const dateStr  = new Date(a.assigned_at).toLocaleString('es-MX', {
+                        day: 'numeric', month: 'short', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit',
+                      });
+                      return (
+                        <div
+                          key={a.id}
+                          className={`flex items-center gap-3 rounded-xl border p-3 transition-colors ${
+                            a.is_active
+                              ? 'border-emerald-500/20 bg-emerald-500/5'
+                              : 'border-border/30 bg-muted/10 opacity-60'
+                          }`}
+                        >
+                          <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
+                            {aDriver?.full_name?.charAt(0)?.toUpperCase() ?? '?'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold truncate">
+                              {aDriver?.full_name ?? a.driver_id.slice(0, 8)}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                              <Car className="h-2.5 w-2.5" />
+                              {aVehicle?.alias ?? aVehicle?.plate ?? a.vehicle_id.slice(0, 8)}
+                            </p>
+                            {a.notes && (
+                              <p className="text-[10px] text-muted-foreground/70 italic mt-0.5 truncate">
+                                {a.notes}
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-[10px] text-muted-foreground">{dateStr}</p>
+                            {aBy && (
+                              <p className="text-[9px] text-muted-foreground/60">por {aBy.full_name}</p>
+                            )}
+                            {a.is_active ? (
+                              <span className="inline-flex items-center gap-1 mt-0.5 text-[9px] font-bold text-emerald-400">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                Activa
+                              </span>
+                            ) : (
+                              <span className="text-[9px] text-muted-foreground/50 mt-0.5">Inactiva</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* ── Historial de recorridos ── */}
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -566,15 +640,34 @@ export function RouteDetailPage() {
                       strokeOpacity={0.85}
                     />
 
-                    {/* Trail del conductor seleccionado (verde) */}
-                    {selectedTrail.length > 1 && (
-                      <Polyline
-                        path={selectedTrail}
-                        strokeColor="#22c55e"
-                        strokeWeight={4}
-                        strokeOpacity={0.8}
-                      />
-                    )}
+                    {/* Trail del conductor seleccionado — segmentado on/off route */}
+                    {selectedTrail.length > 1 && (() => {
+                      const segments: { off: boolean; path: { lat: number; lng: number }[] }[] = [];
+                      let currentOff = selectedTrail[0]!.off ?? false;
+                      let currentPath: { lat: number; lng: number }[] = [{ lat: selectedTrail[0]!.lat, lng: selectedTrail[0]!.lng }];
+                      for (let i = 1; i < selectedTrail.length; i++) {
+                        const pt = selectedTrail[i]!;
+                        const ptOff = pt.off ?? false;
+                        if (ptOff !== currentOff) {
+                          currentPath.push({ lat: pt.lat, lng: pt.lng });
+                          segments.push({ off: currentOff, path: currentPath });
+                          currentOff = ptOff;
+                          currentPath = [{ lat: pt.lat, lng: pt.lng }];
+                        } else {
+                          currentPath.push({ lat: pt.lat, lng: pt.lng });
+                        }
+                      }
+                      if (currentPath.length >= 2) segments.push({ off: currentOff, path: currentPath });
+                      return segments.map((seg, si) => (
+                        <Polyline
+                          key={`trail-seg-${si}`}
+                          path={seg.path}
+                          strokeColor={seg.off ? '#ef4444' : '#22c55e'}
+                          strokeWeight={4}
+                          strokeOpacity={seg.off ? 0.85 : 0.8}
+                        />
+                      ));
+                    })()}
 
                     {/* Origen y destino */}
                     <AdvancedMarker position={polyline[0]} title={route.origin_name}>
@@ -587,6 +680,32 @@ export function RouteDetailPage() {
                         <MapPin className="h-2.5 w-2.5" />{route.dest_name}
                       </div>
                     </AdvancedMarker>
+
+                    {/* Ruta de navegación: vehículo → primer punto (Directions API o fallback recto) */}
+                    {route.vehicle_id && liveVehicles[route.vehicle_id] && activeRoutes[route.vehicle_id] === route.id && polyline.length > 0 && (() => {
+                      const lv = liveVehicles[route.vehicle_id!];
+                      const firstWp = polyline[0]!;
+                      const dx = lv.lat - firstWp.lat;
+                      const dy = lv.lng - firstWp.lng;
+                      const distApprox = Math.sqrt(dx * dx + dy * dy) * 111_000;
+                      if (distApprox < 150) return null;
+
+                      // Preferir polyline de Directions API
+                      const navPath = navRoutes[route.vehicle_id!];
+                      const path = navPath && navPath.length >= 2
+                        ? navPath
+                        : [{ lat: lv.lat, lng: lv.lng }, firstWp];
+
+                      return (
+                        <Polyline
+                          path={path}
+                          strokeColor="#06b6d4"
+                          strokeWeight={3}
+                          strokeOpacity={0.7}
+                          geodesic
+                        />
+                      );
+                    })()}
 
                     {/* Posición actual del vehículo seleccionado */}
                     {selectedVehicleId && liveVehicles[selectedVehicleId] && (() => {
@@ -679,6 +798,14 @@ export function RouteDetailPage() {
                 <div className="flex items-center gap-2">
                   <div className="h-0.5 w-5 rounded-full bg-emerald-400 flex-shrink-0" />
                   <span className="text-[10px] text-muted-foreground">Recorrido conductor</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-0.5 w-5 rounded-full bg-red-400 flex-shrink-0" />
+                  <span className="text-[10px] text-muted-foreground">Desvio de ruta</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-0.5 w-5 rounded-full bg-cyan-400 flex-shrink-0" />
+                  <span className="text-[10px] text-muted-foreground">En camino al inicio</span>
                 </div>
               </div>
             </div>

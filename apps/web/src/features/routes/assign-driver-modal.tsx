@@ -36,7 +36,7 @@ type Step = 'select' | 'confirm';
 export function AssignDriverModal({
   routeId, routeName, open, onClose, currentAssignment,
 }: AssignDriverModalProps) {
-  const { data: drivers = [], isLoading: driversLoading } = useDrivers();
+  const { data: drivers = [], isLoading: driversLoading, error: driversError } = useDrivers();
   const { data: vehicles = [] } = useVehicles();
   const assign = useAssignDriverToRoute();
 
@@ -154,6 +154,14 @@ export function AssignDriverModal({
               {driversLoading ? (
                 <div className="flex justify-center py-8">
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-primary" />
+                </div>
+              ) : driversError ? (
+                <div className="flex flex-col items-center py-8 gap-2 text-destructive">
+                  <AlertTriangle className="h-8 w-8 opacity-50" />
+                  <p className="text-sm font-medium">Error al cargar conductores</p>
+                  <p className="text-xs opacity-70 text-center max-w-[260px]">
+                    {driversError.message ?? 'No se pudo conectar con el servidor. Verifica que el API este corriendo.'}
+                  </p>
                 </div>
               ) : drivers.length === 0 ? (
                 <div className="flex flex-col items-center py-8 gap-2 text-muted-foreground">

@@ -656,13 +656,11 @@ export function RoutesPage() {
                         Ver detalle
                       </Link>
                       <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                        {r.status === 'active' && (
-                          <button type="button" onClick={() => setAssignTarget(r)}
-                            className="rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-[10px] text-primary hover:bg-primary/10 transition-colors"
-                          >
-                            Asignar
-                          </button>
-                        )}
+                        <button type="button" onClick={() => setAssignTarget(r)}
+                          className="rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-[10px] text-primary hover:bg-primary/10 transition-colors"
+                        >
+                          Asignar
+                        </button>
                         <button type="button" onClick={() => toggleStatus(r)}
                           className="rounded-md border border-border/50 px-2 py-1 text-[10px] hover:bg-muted transition-colors"
                         >
