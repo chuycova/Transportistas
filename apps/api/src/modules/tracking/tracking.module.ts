@@ -8,6 +8,7 @@ import { TrackingController } from './tracking.controller';
 import { TrackingGateway } from './infrastructure/tracking.gateway';
 import { ProcessLocationUseCase } from './application/process-location.use-case';
 import { PingBatchBufferService } from './application/ping-batch-buffer.service';
+import { TrackingSessionService } from './application/tracking-session.service';
 import { SupabaseLocationRepository } from './infrastructure/supabase-location.repository';
 import { GoogleRoadsAdapter } from './infrastructure/google-roads.adapter';
 import { LOCATION_REPOSITORY } from '../../common/tokens';
@@ -23,10 +24,12 @@ import { LOCATION_REPOSITORY } from '../../common/tokens';
   controllers: [TrackingController],
   providers: [
     { provide: LOCATION_REPOSITORY, useClass: SupabaseLocationRepository },
+    TrackingSessionService,         // Estado en memoria: sesiones + cachés
     TrackingGateway,
-    GoogleRoadsAdapter,         // Snap GPS → calle real
-    PingBatchBufferService,     // Batch buffer (reduce costos Roads API 10x)
+    GoogleRoadsAdapter,             // Snap GPS → calle real
+    PingBatchBufferService,         // Batch buffer (reduce costos Roads API 10x)
     ProcessLocationUseCase,
   ],
 })
 export class TrackingModule {}
+

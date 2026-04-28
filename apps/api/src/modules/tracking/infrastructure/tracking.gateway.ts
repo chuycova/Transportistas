@@ -1,13 +1,21 @@
-// WebSocket Gateway: punto de entrada de pings GPS del móvil y emisor al dashboard web.
-// Cada tenant tiene su propio "room" de Socket.io: `tenant:{tenantId}`
+// ─── tracking.gateway.ts ──────────────────────────────────────────────────────
+// WebSocket Gateway: transporte WS puro.
+//
+// Responsabilidades de ESTE archivo:
+//   • Gestión del ciclo de vida de conexiones (connect / disconnect)
+//   • Routing de eventos entrantes del móvil → use-cases / servicios
+//   • Emisión de eventos salientes al dashboard web (room por tenant)
+//   • Re-hidratación de clientes web al unirse al room
+//
+// Estado de sesiones y cachés en memoria → TrackingSessionService (inyectado).
 //
 // Flujo de conexión del móvil:
 //   1. connectSocket(jwt) → socket se conecta con auth.token
 //   2. El móvil emite `tracking:start` con { vehicleId, tenantId }
-//   3. El gateway registra socketId → { vehicleId, tenantId }
+//   3. TrackingSessionService registra socketId → { vehicleId, tenantId }
 //   4. El móvil emite `location:ping` con la posición
 //   5. El gateway delega al ProcessLocationUseCase
-//   6. Al desconectarse (tracking detenido / pérdida de red), se marca el vehículo inactive
+//   6. Al desconectarse, se marca el vehículo inactive si no quedan otros sockets
 
 import {
   WebSocketGateway,
@@ -23,27 +31,14 @@ import { Logger, Inject } from '@nestjs/common';
 import type { LocationWebSocketPayload } from '@zona-zero/domain';
 import type { IVehicleRepository } from '@zona-zero/domain';
 import { VEHICLE_REPOSITORY } from '../../../common/tokens';
+import { TrackingSessionService } from '../application/tracking-session.service';
 
 /** Nombre del evento que la Web escucha para actualizar marcadores en el mapa */
-export const LOCATION_UPDATE_EVENT = 'location:update';
-
-/** Nombre del evento de alerta de desvío */
-export const DEVIATION_ALERT_EVENT = 'alert:deviation';
-
-/** Alerta de emergencia (botón de pánico) */
-export const EMERGENCY_ALERT_EVENT = 'alert:emergency';
-
-/** Alerta de geocerca (entrada/salida) */
-export const GEOFENCE_ALERT_EVENT = 'alert:geofence';
-
-/** Conductor inició tracking (la web muestra toast "en camino") */
-export const TRACKING_STARTED_EVENT = 'tracking:started';
-
-/** Contexto de tracking registrado por socket */
-interface DriverSession {
-  vehicleId: string;
-  tenantId: string;
-}
+export const LOCATION_UPDATE_EVENT    = 'location:update';
+export const DEVIATION_ALERT_EVENT    = 'alert:deviation';
+export const EMERGENCY_ALERT_EVENT    = 'alert:emergency';
+export const GEOFENCE_ALERT_EVENT     = 'alert:geofence';
+export const TRACKING_STARTED_EVENT   = 'tracking:started';
 
 @WebSocketGateway({
   cors: {
@@ -58,17 +53,6 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   private readonly logger = new Logger(TrackingGateway.name);
 
-  /** socketId -> sesión del conductor. Permite limpiar estado al desconectarse. */
-  private readonly driverSessions = new Map<string, DriverSession>();
-
-  // ── Cachés en memoria para re-hidratar clientes web al reconectarse ──
-  /** vehicleId -> última posición emitida + tenantId */
-  private readonly lastPositions = new Map<string, { tenantId: string; payload: LocationWebSocketPayload }>();
-  /** vehicleId -> ruta de navegación (Directions API polyline) */
-  private readonly cachedNavRoutes = new Map<string, { vehicleId: string; routeId: string; path: { lat: number; lng: number }[] }>();
-  /** vehicleId -> routeId activa */
-  private readonly cachedActiveRoutes = new Map<string, { vehicleId: string; routeId: string }>();
-
   /** Callback inyectado post-construcción para evitar dependencia circular */
   private processPingFn?: (ping: Parameters<TrackingGateway['onLocationPing']>[1]) => void;
   /** Callback para manejar alertas de pánico vía socket */
@@ -78,22 +62,24 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   constructor(
     @Inject(VEHICLE_REPOSITORY) private readonly vehicleRepo: IVehicleRepository,
+    private readonly sessions: TrackingSessionService,
   ) {}
 
-  /** El ProcessLocationUseCase registra su callback aquí al iniciar el módulo */
+  // ── Callbacks externos (evitan dependencia circular) ─────────────────────
+
   setProcessPingCallback(fn: (ping: Parameters<TrackingGateway['onLocationPing']>[1]) => void): void {
     this.processPingFn = fn;
   }
 
-  /** Registra el handler de pánico (evita dependencia circular con TrackingController) */
   setPanicCallback(fn: (payload: { vehicleId: string; tenantId: string; coordinate?: { lat: number; lng: number } }) => Promise<void>): void {
     this.processPanicFn = fn;
   }
 
-  /** Registra callback de limpieza de estado del ProcessLocationUseCase */
   setClearVehicleStateCallback(fn: (vehicleId: string) => void): void {
     this.clearVehicleStateFn = fn;
   }
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   handleConnection(client: Socket) {
     this.logger.log(`Cliente conectado: ${client.id}`);
@@ -102,35 +88,30 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   async handleDisconnect(client: Socket) {
     this.logger.log(`Cliente desconectado: ${client.id}`);
 
-    const session = this.driverSessions.get(client.id);
-    if (session) {
-      this.driverSessions.delete(client.id);
-      // Ignorar sesiones sin vehicleId válido (p. ej. clientes web o desconexiones
-      // antes de que el conductor llame tracking:start)
-      if (!session.vehicleId) return;
+    const removed = this.sessions.removeSession(client.id);
+    if (!removed) return;
+
+    const { session, hasOtherSockets } = removed;
+    if (!session.vehicleId) return;
+
+    if (!hasOtherSockets) {
       try {
-        // Solo marcar inactive si ningún otro socket del mismo vehículo sigue conectado
-        const stillConnected = [...this.driverSessions.values()].some(
-          (s) => s.vehicleId === session.vehicleId,
-        );
-        if (!stillConnected) {
-          await this.vehicleRepo.updateStatus(session.vehicleId, session.tenantId, 'inactive');
-          this.clearVehicleStateFn?.(session.vehicleId);
-          this.lastPositions.delete(session.vehicleId);
-          this.cachedActiveRoutes.delete(session.vehicleId);
-          this.cachedNavRoutes.delete(session.vehicleId);
-          this.logger.log(`Vehículo ${session.vehicleId} marcado inactive (conductor desconectado)`);
-        }
+        await this.vehicleRepo.updateStatus(session.vehicleId, session.tenantId, 'inactive');
+        this.clearVehicleStateFn?.(session.vehicleId);
+        this.sessions.clearVehicleCache(session.vehicleId);
+        this.logger.log(`Vehículo ${session.vehicleId} marcado inactive (conductor desconectado)`);
       } catch (err) {
         this.logger.error(`Error al marcar vehículo inactive: ${(err as Error).message}`);
       }
     }
   }
 
+  // ── Eventos entrantes ─────────────────────────────────────────────────────
+
   /**
    * El cliente web se une al room de su tenant.
-   * Evento: `join:tenant`
-   * Payload: { tenantId: string }
+   * Evento: `join:tenant` | Payload: { tenantId: string }
+   * Re-hidrata al cliente con el estado cacheado del tenant.
    */
   @SubscribeMessage('join:tenant')
   handleJoinTenant(
@@ -141,16 +122,19 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     void client.join(room);
     this.logger.log(`Cliente ${client.id} se unió al room ${room}`);
 
-    // Re-hidratar: enviar últimas posiciones, rutas activas y rutas de navegación cacheadas
-    for (const [, entry] of this.lastPositions) {
-      if (entry.tenantId === data.tenantId) {
-        client.emit(LOCATION_UPDATE_EVENT, entry.payload);
-      }
+    // Re-hidratar con el snapshot en memoria del tenant
+    const snapshot = this.sessions.getHydrationSnapshot(data.tenantId);
+    for (const payload of snapshot.positions) {
+      client.emit(LOCATION_UPDATE_EVENT, payload);
     }
-    for (const ar of this.cachedActiveRoutes.values()) {
-      client.emit(TRACKING_STARTED_EVENT, { vehicleId: ar.vehicleId, routeId: ar.routeId, timestamp: new Date().toISOString() });
+    for (const ar of snapshot.activeRoutes) {
+      client.emit(TRACKING_STARTED_EVENT, {
+        vehicleId: ar.vehicleId,
+        routeId:   ar.routeId,
+        timestamp: new Date().toISOString(),
+      });
     }
-    for (const nr of this.cachedNavRoutes.values()) {
+    for (const nr of snapshot.navRoutes) {
       client.emit('navigation:route', nr);
     }
 
@@ -159,32 +143,27 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   /**
    * El conductor registra su sesión de tracking.
-   * Evento: `tracking:start`
-   * Payload: { vehicleId: string, tenantId: string, routeId?: string }
+   * Evento: `tracking:start` | Payload: { vehicleId, tenantId, routeId? }
    */
   @SubscribeMessage('tracking:start')
   handleTrackingStart(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { vehicleId: string; tenantId: string; routeId?: string },
   ) {
-    // No registrar sesiones con vehicleId vacío o inválido
     if (!data.vehicleId || !data.tenantId) {
       this.logger.warn(`tracking:start ignorado: vehicleId o tenantId vacío (socket=${client.id})`);
       return { event: 'tracking:error', data: { reason: 'vehicleId_required' } };
     }
-    this.driverSessions.set(client.id, { vehicleId: data.vehicleId, tenantId: data.tenantId });
-    this.logger.log(`Conductor registrado: socket=${client.id} vehicleId=${data.vehicleId} routeId=${data.routeId ?? 'none'}`);
 
-    // Cachear ruta activa para re-hidratación de clientes web
+    this.sessions.registerSession(client.id, { vehicleId: data.vehicleId, tenantId: data.tenantId });
+
     if (data.routeId) {
-      this.cachedActiveRoutes.set(data.vehicleId, { vehicleId: data.vehicleId, routeId: data.routeId });
+      this.sessions.cacheActiveRoute(data.vehicleId, data.routeId);
     }
 
-    // Notificar al dashboard web que el conductor inició ruta (en camino al primer punto)
-    const room = `tenant:${data.tenantId}`;
-    this.server.to(room).emit(TRACKING_STARTED_EVENT, {
+    this.server.to(`tenant:${data.tenantId}`).emit(TRACKING_STARTED_EVENT, {
       vehicleId: data.vehicleId,
-      routeId: data.routeId,
+      routeId:   data.routeId,
       timestamp: new Date().toISOString(),
     });
 
@@ -192,83 +171,56 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   /**
-   * El conductor comparte la ruta de navegación (Directions API) para el dashboard web.
-   * Evento: `navigation:route`
-   * Payload: { vehicleId, routeId, path: {lat,lng}[] }
-   */
-  @SubscribeMessage('navigation:route')
-  handleNavigationRoute(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { vehicleId: string; routeId: string; path: { lat: number; lng: number }[] },
-  ) {
-    const session = this.driverSessions.get(client.id);
-    if (!session) return;
-
-    // Cachear para re-hidratación
-    this.cachedNavRoutes.set(data.vehicleId, {
-      vehicleId: data.vehicleId,
-      routeId: data.routeId,
-      path: data.path,
-    });
-
-    const room = `tenant:${session.tenantId}`;
-    this.server.to(room).emit('navigation:route', {
-      vehicleId: data.vehicleId,
-      routeId: data.routeId,
-      path: data.path,
-    });
-    this.logger.log(`navigation:route relayed: vehicleId=${data.vehicleId} points=${data.path?.length ?? 0}`);
-  }
-
-  /**
    * El conductor detiene el tracking explícitamente.
    * Evento: `tracking:stop`
-   * Permite limpiar el estado antes de desconectarse.
    */
   @SubscribeMessage('tracking:stop')
   async handleTrackingStop(@ConnectedSocket() client: Socket) {
-    const session = this.driverSessions.get(client.id);
-    if (session) {
-      this.driverSessions.delete(client.id);
-      const stillConnected = [...this.driverSessions.values()].some(
-        (s) => s.vehicleId === session.vehicleId,
-      );
-      if (!stillConnected) {
-        await this.vehicleRepo.updateStatus(session.vehicleId, session.tenantId, 'inactive');
-        this.clearVehicleStateFn?.(session.vehicleId);
-        // Limpiar cachés de este vehículo
-        this.lastPositions.delete(session.vehicleId);
-        this.cachedActiveRoutes.delete(session.vehicleId);
-        this.cachedNavRoutes.delete(session.vehicleId);
-        this.logger.log(`Vehículo ${session.vehicleId} marcado inactive (tracking detenido)`);
-      }
+    const removed = this.sessions.removeSession(client.id);
+    if (removed && !removed.hasOtherSockets) {
+      const { session } = removed;
+      await this.vehicleRepo.updateStatus(session.vehicleId, session.tenantId, 'inactive');
+      this.clearVehicleStateFn?.(session.vehicleId);
+      this.sessions.clearVehicleCache(session.vehicleId);
+      this.logger.log(`Vehículo ${session.vehicleId} marcado inactive (tracking detenido)`);
     }
     return { event: 'tracking:stopped' };
   }
 
   /**
-   * Recibe alerta de pánico del móvil vía socket.
-   * Evento: `panic:alert`
-   * Payload: { vehicleId, tenantId, coordinate? }
+   * El conductor comparte la ruta de navegación (Directions API) para el dashboard web.
+   * Evento: `navigation:route` | Payload: { vehicleId, routeId, tenantId?, path }
+   *
+   * Nota: este evento se emite ANTES de `tracking:start` (el conductor está en camino
+   * al primer punto pero aún no ha pulsado "Iniciar"). Por eso se acepta tenantId
+   * en el payload como fallback cuando no hay sesión registrada aún.
    */
-  @SubscribeMessage('panic:alert')
-  async onPanicAlert(
+  @SubscribeMessage('navigation:route')
+  handleNavigationRoute(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { vehicleId: string; tenantId: string; coordinate?: { lat: number; lng: number } },
+    @MessageBody() data: { vehicleId: string; routeId: string; tenantId?: string; path: { lat: number; lng: number }[] },
   ) {
-    this.logger.warn(`PÁNICO recibido vía socket: vehicleId=${payload.vehicleId}`);
-    if (this.processPanicFn) {
-      await this.processPanicFn(payload);
+    const session  = this.sessions.getSession(client.id);
+    const tenantId = session?.tenantId ?? data.tenantId;
+    if (!tenantId) {
+      this.logger.warn(`navigation:route ignorado: sin sesión ni tenantId en payload (socket=${client.id})`);
+      return;
     }
-    return { event: 'panic:received' };
+
+    this.sessions.cacheNavRoute(data.vehicleId, data.routeId, data.path);
+
+    this.server.to(`tenant:${tenantId}`).emit('navigation:route', {
+      vehicleId: data.vehicleId,
+      routeId:   data.routeId,
+      path:      data.path,
+    });
+    this.logger.log(`navigation:route relayed: vehicleId=${data.vehicleId} points=${data.path?.length ?? 0}`);
   }
 
   /**
-   * Recibe un ping GPS del móvil y lo delega al ProcessLocationUseCase.
+   * Recibe pings GPS del móvil y los delega al ProcessLocationUseCase.
    * Evento: `location:ping`
-   * Si el socket no tiene sesión registrada (tracking:start no llegó aún,
-   * p.ej. por reconexión), la registra automáticamente desde el payload para
-   * no perder pings en la ventana de inicio.
+   * Si no hay sesión aún (reconexión antes de tracking:start), la auto-registra.
    */
   @SubscribeMessage('location:ping')
   onLocationPing(
@@ -284,38 +236,50 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       recordedAt: string;
     },
   ) {
-    if (!this.driverSessions.has(client.id) && payload.vehicleId && payload.tenantId) {
-      this.driverSessions.set(client.id, { vehicleId: payload.vehicleId, tenantId: payload.tenantId });
+    if (!this.sessions.hasSession(client.id) && payload.vehicleId && payload.tenantId) {
+      this.sessions.registerSession(client.id, {
+        vehicleId: payload.vehicleId,
+        tenantId:  payload.tenantId,
+      });
       this.logger.warn(`location:ping: sesión auto-registrada para socket ${client.id} (vehicleId=${payload.vehicleId})`);
     }
     this.processPingFn?.(payload);
   }
 
   /**
-   * Emite la posición de un vehículo a todos los clientes web del tenant.
-   * Llamado internamente por el ProcessLocationUseCase.
+   * Recibe alerta de pánico del móvil vía socket.
+   * Evento: `panic:alert` | Payload: { vehicleId, tenantId, coordinate? }
    */
-  emitLocationUpdate(tenantId: string, payload: LocationWebSocketPayload): void {
-    // Cachear última posición para re-hidratación al join:tenant
-    this.lastPositions.set(payload.v, { tenantId, payload });
-    const room = `tenant:${tenantId}`;
-    this.server.to(room).emit(LOCATION_UPDATE_EVENT, payload);
+  @SubscribeMessage('panic:alert')
+  async onPanicAlert(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { vehicleId: string; tenantId: string; coordinate?: { lat: number; lng: number } },
+  ) {
+    this.logger.warn(`PÁNICO recibido vía socket: vehicleId=${payload.vehicleId}`);
+    if (this.processPanicFn) {
+      await this.processPanicFn(payload);
+    }
+    return { event: 'panic:received' };
   }
 
-  /**
-   * Emite una alerta de desvío al room del tenant.
-   * El dashboard web la recibe y muestra un toast/notification.
-   */
+  // ── Emisión de eventos al dashboard ──────────────────────────────────────
+
+  /** Emite la posición de un vehículo a todos los clientes web del tenant. */
+  emitLocationUpdate(tenantId: string, payload: LocationWebSocketPayload): void {
+    this.sessions.cachePosition(tenantId, payload);
+    this.server.to(`tenant:${tenantId}`).emit(LOCATION_UPDATE_EVENT, payload);
+  }
+
+  /** Emite una alerta de desvío al room del tenant. */
   emitDeviationAlert(tenantId: string, vehicleId: string, deviationM: number): void {
-    const room = `tenant:${tenantId}`;
-    this.server.to(room).emit(DEVIATION_ALERT_EVENT, {
+    this.server.to(`tenant:${tenantId}`).emit(DEVIATION_ALERT_EVENT, {
       vehicleId,
       deviationM: Math.round(deviationM),
-      timestamp: new Date().toISOString(),
+      timestamp:  new Date().toISOString(),
     });
   }
 
-  /** Emite alerta de botón de pánico al dashboard */
+  /** Emite alerta de botón de pánico al dashboard. */
   emitEmergencyAlert(
     tenantId: string,
     vehicleId: string,
@@ -328,7 +292,7 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     });
   }
 
-  /** Emite alerta de geocerca (entrada o salida) al dashboard */
+  /** Emite alerta de geocerca (entrada o salida) al dashboard. */
   emitGeofenceAlert(
     tenantId: string,
     vehicleId: string,

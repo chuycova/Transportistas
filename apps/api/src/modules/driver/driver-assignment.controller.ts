@@ -155,6 +155,19 @@ export class DriverAssignmentController {
     }
 
     // 3b. Rutas via route_assignments (new system: assigned to this driver)
+    type RawRoute = {
+      id: string;
+      name: string;
+      origin_name: string;
+      dest_name: string;
+      status: string;
+      total_distance_m: number | null;
+      estimated_duration_s: number | null;
+      deviation_threshold_m: number | null;
+      polyline_coords: [number, number][] | null;
+      stops: Array<{ name: string; address?: string; lat: number; lng: number; order: number; radius_m?: number }> | string | null;
+    };
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: assignmentRows } = await (db as any)
       .from('route_assignments')
@@ -178,19 +191,6 @@ export class DriverAssignmentController {
 
       routesByAssignment = (assignedRoutes ?? []) as unknown as RawRoute[];
     }
-
-    type RawRoute = {
-      id: string;
-      name: string;
-      origin_name: string;
-      dest_name: string;
-      status: string;
-      total_distance_m: number | null;
-      estimated_duration_s: number | null;
-      deviation_threshold_m: number | null;
-      polyline_coords: [number, number][] | null;
-      stops: Array<{ name: string; address?: string; lat: number; lng: number; order_index: number }> | null;
-    };
 
     // 3c. Merge and deduplicate by route ID
     const rawByVehicle = (routesByVehicle ?? []) as unknown as RawRoute[];
@@ -233,10 +233,20 @@ export class DriverAssignmentController {
       const waypoints = rawPolyline
         .filter((_, i) => i % 3 === 0)
         .map(([lng, lat]) => ({ lat, lng }));
-      const rawStops = Array.isArray(route.stops) ? route.stops : [];
-      const stops = (rawStops as Array<{ name: string; address?: string; lat: number; lng: number; order_index: number }>)
-        .sort((a, b) => a.order_index - b.order_index)
-        .map((s) => ({ name: s.name, address: s.address ?? null, lat: s.lat, lng: s.lng, order: s.order_index }));
+
+      // stops may arrive as a JSON string from the Supabase view (jsonb column behaviour)
+      let stopsRaw: Array<{ name: string; address?: string; lat: number; lng: number; order: number; radius_m?: number }> = [];
+      const rawStops = route.stops;
+      if (Array.isArray(rawStops)) {
+        stopsRaw = rawStops;
+      } else if (typeof rawStops === 'string') {
+        try { stopsRaw = JSON.parse(rawStops); } catch { stopsRaw = []; }
+      }
+
+      const stops = stopsRaw
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map((s) => ({ name: s.name, address: s.address ?? null, lat: s.lat, lng: s.lng, order: s.order }));
+
       return {
         id: route.id,
         name: route.name,
