@@ -121,7 +121,7 @@ export function TrackingScreen() {
   // ── Ruta de navegación al inicio ─────────────────────────────────────────
   const { navToStartPath, setNavToStartPath } = useNavToStart({
     driverPosition, routeWaypoints, navVersion, navFetchedRef,
-    isTracking, vehicleId, routeId,
+    isTracking, vehicleId, routeId, tenantId,
   });
 
   // ── Cámara Waze-style ─────────────────────────────────────────────────────

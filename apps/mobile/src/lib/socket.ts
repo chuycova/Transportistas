@@ -123,8 +123,9 @@ export function emitNavigationRoute(
   vehicleId: string,
   routeId: string,
   path: { lat: number; lng: number }[],
+  tenantId?: string,
 ): void {
-  _socket?.emit('navigation:route', { vehicleId, routeId, path });
+  _socket?.emit('navigation:route', { vehicleId, routeId, path, tenantId });
 }
 
 /** Desconecta el socket (cuando el conductor para el tracking) */

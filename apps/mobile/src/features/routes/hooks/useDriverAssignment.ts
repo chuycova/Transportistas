@@ -83,7 +83,10 @@ export function useDriverAssignment(): UseDriverAssignmentResult {
         () => { void fetchAssignment(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_user_assignments', filter: `user_id=eq.${currentUserId}` },
         () => { void fetchAssignment(); })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'routes' },
+      // Re-fetch when a new route_assignment is added or changed for this driver
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'route_assignments', filter: `driver_id=eq.${currentUserId}` },
+        () => { void fetchAssignment(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'routes' },
         () => { void fetchAssignment(); })
       .subscribe();
     return () => { void supabase.removeChannel(channel); };

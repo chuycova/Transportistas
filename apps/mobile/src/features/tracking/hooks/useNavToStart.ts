@@ -17,6 +17,7 @@ interface UseNavToStartParams {
   isTracking:     boolean;
   vehicleId:      string;
   routeId:        string;
+  tenantId:       string;
 }
 
 export function useNavToStart({
@@ -27,6 +28,7 @@ export function useNavToStart({
   isTracking,
   vehicleId,
   routeId,
+  tenantId,
 }: UseNavToStartParams): {
   navToStartPath: LatLng[];
   setNavToStartPath: (path: LatLng[]) => void;
@@ -57,28 +59,37 @@ export function useNavToStart({
           vehicleId,
           routeId,
           path.map((p) => ({ lat: p.latitude, lng: p.longitude })),
+          tenantId || undefined,
         );
       }
-    }).catch(() => { /* silencioso */ });
+    }).catch(() => {
+      // Directions API failed — fall back to straight line so the path is still visible
+      const fallback: LatLng[] = [
+        { latitude: driverPosition.lat, longitude: driverPosition.lng },
+        { latitude: startPoint.latitude, longitude: startPoint.longitude },
+      ];
+      setNavToStartPath(fallback);
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driverPosition, routeWaypoints, navVersion]);
 
   // Re-emitir la ruta de navegación al (re)conectar el socket.
-  // Cubre el caso donde la ruta se calculó ANTES de que el socket estuviera listo
-  // (tab ganó foco → Directions API → emit → socket null → se perdió).
+  // No requiere isTracking — el nav al inicio se emite ANTES de que el
+  // conductor pulse "Iniciar", así que también debe re-emitirse en ese estado.
   useEffect(() => {
-    if (!isTracking || !vehicleId || !routeId) return;
+    if (!vehicleId || !routeId) return;
     const cleanup = onSocketReconnect(() => {
       if (navToStartPath.length >= 2) {
         emitNavigationRoute(
           vehicleId,
           routeId,
           navToStartPath.map((p) => ({ lat: p.latitude, lng: p.longitude })),
+          tenantId || undefined,
         );
       }
     });
     return cleanup;
-  }, [isTracking, vehicleId, routeId, navToStartPath]);
+  }, [vehicleId, routeId, tenantId, navToStartPath]);
 
   // Limpiar al detener tracking
   useEffect(() => {
