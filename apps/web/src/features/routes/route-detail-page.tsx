@@ -14,7 +14,7 @@ import {
   Maximize2, Minimize2, Navigation, History,
 } from 'lucide-react';
 import {
-  APIProvider, Map as GMap, AdvancedMarker, Polyline,
+  Map as GMap, AdvancedMarker, Polyline,
 } from '@vis.gl/react-google-maps';
 import {
   useRoute, useUpdateRouteStatus, useDeleteRoute, useRouteAssignments,
@@ -26,7 +26,7 @@ import { useVehicles } from '../vehicles/use-vehicles';
 import { useUsers } from '../users/use-users';
 import { useTrackingStore } from '../../stores/use-tracking-store';
 import { AssignDriverModal } from './assign-driver-modal';
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -49,114 +49,6 @@ const STATUS_META: Record<string, { label: string; className: string; icon: Reac
   pending:   { label: 'Pendiente',  className: 'bg-amber-500/15 text-amber-400 border-amber-500/30',        icon: <AlertTriangle className="h-3 w-3" /> },
   completed: { label: 'Completada', className: 'bg-blue-500/15 text-blue-400 border-blue-500/30',           icon: <CheckCircle2 className="h-3 w-3" /> },
 };
-
-// ─── Minimap SVG ──────────────────────────────────────────────────────────────
-// Renderiza la polilínea de la ruta normalizada en un viewport SVG pequeño.
-// No requiere API key ni peticiones externas.
-
-function RouteMinimap({
-  coords, width = 340, height = 160, routeColor = '#6366f1',
-}: {
-  coords: [number, number][]; // [lng, lat] orden GeoJSON
-  width?: number;
-  height?: number;
-  routeColor?: string;
-}) {
-  const PAD = 16;
-
-  const { points, originPt, destPt } = useMemo(() => {
-    if (coords.length < 2) return { points: '', originPt: null, destPt: null };
-
-    const lngs = coords.map(([lng]) => lng);
-    const lats  = coords.map(([, lat]) => lat);
-    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-    const minLat = Math.min(...lats),  maxLat = Math.max(...lats);
-
-    const rangeX = maxLng - minLng || 0.001;
-    const rangeY = maxLat - minLat || 0.001;
-    const scaleX = (width  - PAD * 2) / rangeX;
-    const scaleY = (height - PAD * 2) / rangeY;
-    const scale  = Math.min(scaleX, scaleY);
-
-    // Centrar en el viewport
-    const offsetX = (width  - rangeX * scale) / 2;
-    const offsetY = (height - rangeY * scale) / 2;
-
-    const toSvg = ([lng, lat]: [number, number]): [number, number] => [
-      offsetX + (lng - minLng) * scale,
-      offsetY + (maxLat - lat) * scale, // flip Y
-    ];
-
-    const pts = coords.map(toSvg);
-    return {
-      points: pts.map(([x, y]) => `${x},${y}`).join(' '),
-      originPt: pts[0]!,
-      destPt:   pts[pts.length - 1]!,
-    };
-  }, [coords, width, height]);
-
-  if (!points) {
-    return (
-      <div className="flex items-center justify-center rounded-xl bg-muted/20 border border-border/40 text-xs text-muted-foreground"
-        style={{ width, height }}>
-        Sin polilínea
-      </div>
-    );
-  }
-
-  return (
-    <svg
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      className="rounded-xl border border-border/40 bg-[#0c0c14]"
-      aria-label="Miniatura de ruta"
-    >
-      {/* Glow de la línea */}
-      <filter id="glow">
-        <feGaussianBlur stdDeviation="2" result="blur" />
-        <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-      </filter>
-
-      {/* Línea de ruta */}
-      <polyline
-        points={points}
-        fill="none"
-        stroke={routeColor}
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        filter="url(#glow)"
-        opacity="0.9"
-      />
-      {/* Línea de ruta más tenue debajo */}
-      <polyline
-        points={points}
-        fill="none"
-        stroke={routeColor}
-        strokeWidth="6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity="0.15"
-      />
-
-      {/* Origen */}
-      {originPt && (
-        <>
-          <circle cx={originPt[0]} cy={originPt[1]} r="6" fill="#22c55e" opacity="0.2" />
-          <circle cx={originPt[0]} cy={originPt[1]} r="3.5" fill="#22c55e" />
-        </>
-      )}
-      {/* Destino */}
-      {destPt && (
-        <>
-          <circle cx={destPt[0]} cy={destPt[1]} r="6" fill="#ef4444" opacity="0.2" />
-          <circle cx={destPt[0]} cy={destPt[1]} r="3.5" fill="#ef4444" />
-        </>
-      )}
-    </svg>
-  );
-}
 
 // ─── Trail SVG en minimap ─────────────────────────────────────────────────────
 // Renderiza el trail del conductor sobre el mismo espacio normalizado.
@@ -192,7 +84,7 @@ function MapLegend({ routeColor }: { routeColor: string }) {
 export function RouteDetailPage() {
   const { id }  = useParams<{ id: string }>();
   const router  = useRouter();
-  const apiKey  = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
+  const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID';
 
   const { data: route, isLoading, error } = useRoute(id);
   const { data: vehicles = [] } = useVehicles();
@@ -236,21 +128,36 @@ export function RouteDetailPage() {
   const vehicleMap = Object.fromEntries(vehicles.map((v) => [v.id, v]));
   const userMap    = Object.fromEntries(users.map((u) => [u.id, u]));
 
-  // Normalizar stops
-  const stops = Array.isArray(route.stops) ? route.stops : [];
+  // Normalizar stops — Supabase puede devolver jsonb de vistas como string en lugar de objeto
+  const stops = (() => {
+    const raw = route.stops;
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string') {
+      try { return JSON.parse(raw) as typeof raw; } catch { return []; }
+    }
+    return [];
+  })();
 
   const assignedVehicle  = route.vehicle_id ? vehicleMap[route.vehicle_id] : null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const assignedDriverId = assignedVehicle ? (assignedVehicle as any).assigned_driver_id as string | null : null;
   const assignedDriver   = assignedDriverId ? userMap[assignedDriverId] : null;
 
-  const currentAssignment = (assignedDriver && assignedVehicle)
-    ? { driverId: assignedDriverId!, driverName: assignedDriver.full_name, vehiclePlate: assignedVehicle.plate ?? '' }
-    : null;
+  // Build activeAssignments from route_assignments data for the modal
+  const activeAssignments = assignments
+    .filter((a) => a.is_active)
+    .map((a) => {
+      const v = vehicleMap[a.vehicle_id];
+      const d = userMap[a.driver_id];
+      return {
+        driverId: a.driver_id,
+        driverName: d?.full_name ?? a.driver_id.slice(0, 8),
+        vehiclePlate: v?.plate ?? a.vehicle_id.slice(0, 8),
+      };
+    });
 
   // ── Polyline para el mapa expandido ──────────────────────────────────────
   const polyline = (route.polyline_coords ?? []).map(([lng, lat]) => ({ lat, lng }));
-  const mapCenter = polyline.length > 0 ? polyline[Math.floor(polyline.length / 2)] : { lat: 19.4326, lng: -99.1332 };
 
   const routeColor = assignedVehicle?.color ?? '#6366f1';
   const meta = STATUS_META[route.status] ?? STATUS_META.inactive;
@@ -320,7 +227,7 @@ export function RouteDetailPage() {
             <button type="button" onClick={() => setAssignOpen(true)}
               className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
               <Pencil className="h-3.5 w-3.5" />
-              {currentAssignment ? 'Reasignar' : 'Asignar conductor'}
+              {activeAssignments.length > 0 ? 'Asignar otro conductor' : 'Asignar conductor'}
             </button>
             <button type="button" onClick={() => setDeleteConfirm(true)}
               className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/20 transition-colors">
@@ -348,27 +255,53 @@ export function RouteDetailPage() {
               {/* ── Minimap + stats lado a lado ── */}
               <div className="flex gap-4 flex-wrap">
 
-                {/* Minimap SVG */}
-                <div className="relative flex-shrink-0">
-                  <RouteMinimap
-                    coords={route.polyline_coords ?? []}
-                    width={240}
-                    height={150}
-                    routeColor={routeColor}
-                  />
-                                  {/* Pin origen — punto verde sin texto */}
-                  <div className="absolute top-2 left-2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 shadow-lg ring-2 ring-white/20">
-                    <MapPin className="h-3.5 w-3.5 text-white" fill="white" />
-                  </div>
-                  {/* Pin destino — punto rojo sin texto */}
-                  <div className="absolute bottom-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 shadow-lg ring-2 ring-white/20">
-                    <MapPin className="h-3.5 w-3.5 text-white" fill="white" />
-                  </div>
+                {/* Minimap — Google Maps real, tamaño fijo */}
+                <div
+                  className="relative flex-shrink-0 rounded-xl overflow-hidden border border-border/40"
+                  style={{ width: 240, height: 150 }}
+                >
+                  {polyline.length >= 2 ? (
+                    <GMap
+                      mapId={mapId}
+                      defaultBounds={{
+                        north: Math.max(...polyline.map((p) => p.lat)),
+                        south: Math.min(...polyline.map((p) => p.lat)),
+                        east:  Math.max(...polyline.map((p) => p.lng)),
+                        west:  Math.min(...polyline.map((p) => p.lng)),
+                        padding: 24,
+                      }}
+                      gestureHandling="none"
+                      disableDefaultUI={true}
+                      style={{ width: '100%', height: '100%' }}
+                    >
+                      <Polyline
+                        path={polyline}
+                        strokeColor={routeColor}
+                        strokeWeight={4}
+                        strokeOpacity={0.9}
+                      />
+                      <AdvancedMarker position={polyline[0]} title={route.origin_name}>
+                        <div className="h-3 w-3 rounded-full bg-emerald-500 border-2 border-white shadow" />
+                      </AdvancedMarker>
+                      {stops.sort((a, b) => a.order - b.order).map((s, i) => (
+                        <AdvancedMarker key={i} position={{ lat: s.lat, lng: s.lng }} title={`P${i + 1}: ${s.name}`}>
+                          <div className="h-2.5 w-2.5 rounded-full bg-amber-500 border-2 border-white shadow" />
+                        </AdvancedMarker>
+                      ))}
+                      <AdvancedMarker position={polyline[polyline.length - 1]} title={route.dest_name}>
+                        <div className="h-3 w-3 rounded-full bg-red-500 border-2 border-white shadow" />
+                      </AdvancedMarker>
+                    </GMap>
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-xs text-muted-foreground bg-muted/20">
+                      Sin polilínea
+                    </div>
+                  )}
                   {/* Botón expandir */}
                   <button
                     type="button"
                     onClick={() => setMapExpanded(true)}
-                    className="absolute top-2 right-2 flex items-center gap-1 rounded-lg bg-card/90 border border-border/50 px-2 py-1 text-[10px] font-semibold hover:bg-primary hover:text-white hover:border-primary transition-all shadow-lg"
+                    className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-lg bg-card/90 border border-border/50 px-2 py-1 text-[10px] font-semibold hover:bg-primary hover:text-white hover:border-primary transition-all shadow-lg"
                   >
                     <Maximize2 className="h-3 w-3" />
                     Ver mapa
@@ -382,7 +315,7 @@ export function RouteDetailPage() {
                     {[
                       { label: 'Distancia',  value: fmtDistance(route.total_distance_m),       icon: <Ruler className="h-3 w-3" /> },
                       { label: 'Duración',   value: fmtDuration(route.estimated_duration_s),    icon: <Clock className="h-3 w-3" /> },
-                      { label: 'Tolerancia', value: route.deviation_threshold_m ? `${route.deviation_threshold_m}m` : '50m', icon: <AlertTriangle className="h-3 w-3" /> },
+                      { label: 'Paradas',    value: stops.length > 0 ? `${stops.length}` : '—', icon: <MapPin className="h-3 w-3" /> },
                     ].map(({ label, value, icon }) => (
                       <div key={label} className="rounded-xl border border-border/50 bg-card/60 p-2.5 text-center">
                         <div className="flex justify-center text-muted-foreground mb-1">{icon}</div>
@@ -392,19 +325,52 @@ export function RouteDetailPage() {
                     ))}
                   </div>
 
-                  {/* Recorrido: origen → paradas → destino */}
-                  <div className="rounded-xl border border-border/50 bg-card/60 p-3 space-y-1.5">
-                    {[
-                      { dot: 'bg-emerald-500', label: route.origin_name, sub: 'Origen' },
-                      ...stops.map((s, i) => ({ dot: 'bg-amber-400', label: s.name, sub: `Parada ${i + 1}` })),
-                      { dot: 'bg-red-500',    label: route.dest_name,   sub: 'Destino' },
-                    ].map(({ dot, label, sub }, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className={`h-2 w-2 rounded-full flex-shrink-0 ${dot}`} />
-                        <p className="text-xs font-medium truncate">{label}</p>
-                        <span className="text-[10px] text-muted-foreground ml-auto flex-shrink-0">{sub}</span>
+                  {/* Timeline: origen → paradas → destino */}
+                  <div className="rounded-xl border border-border/50 bg-card/60 overflow-hidden">
+                    <p className="px-3 pt-2.5 pb-1.5 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground border-b border-border/30">
+                      Recorrido definido
+                    </p>
+                    <div className="relative px-3 py-2 space-y-0">
+                      {/* Línea vertical conectora */}
+                      <div className="absolute left-[21px] top-4 bottom-4 w-px bg-border/50" />
+
+                      {/* Origen */}
+                      <div className="flex items-center gap-2.5 py-1.5 relative">
+                        <span className="z-10 h-4 w-4 flex-shrink-0 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20 ring-offset-1 ring-offset-card" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold truncate leading-none">{route.origin_name}</p>
+                          <p className="text-[9px] text-muted-foreground mt-0.5">Origen</p>
+                        </div>
                       </div>
-                    ))}
+
+                      {/* Paradas intermedias */}
+                      {stops.sort((a, b) => a.order - b.order).map((s, i) => (
+                        <div key={i} className="flex items-center gap-2.5 py-1.5 relative">
+                          <span className="z-10 h-4 w-4 flex-shrink-0 rounded-full bg-amber-500 ring-2 ring-amber-500/25 ring-offset-1 ring-offset-card" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-xs font-semibold truncate leading-none">{s.name}</p>
+                              <span className="flex-shrink-0 rounded-md bg-amber-500/15 border border-amber-500/25 px-1.5 py-0.5 text-[9px] font-bold text-amber-400">
+                                P{i + 1}
+                              </span>
+                              {s.radius_m && (
+                                <span className="flex-shrink-0 text-[9px] text-muted-foreground">{s.radius_m}m</span>
+                              )}
+                            </div>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">Parada {i + 1}</p>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Destino */}
+                      <div className="flex items-center gap-2.5 py-1.5 relative">
+                        <span className="z-10 h-4 w-4 flex-shrink-0 rounded-full bg-red-500 ring-2 ring-red-500/20 ring-offset-1 ring-offset-card" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold truncate leading-none">{route.dest_name}</p>
+                          <p className="text-[9px] text-muted-foreground mt-0.5">Destino</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -618,20 +584,25 @@ export function RouteDetailPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_280px] overflow-hidden"
+            className="flex-1 flex flex-row overflow-hidden"
           >
-            {/* Mapa full */}
-            <div className="relative min-h-[320px]">
-              {apiKey && polyline.length > 0 ? (
-                <APIProvider apiKey={apiKey}>
-                  <GMap
-                    mapId="DEMO_MAP_ID"
-                    defaultZoom={12}
-                    defaultCenter={mapCenter}
-                    gestureHandling="greedy"
-                    disableDefaultUI={true}
-                    style={{ width: '100%', height: '100%' }}
-                  >
+            {/* Mapa full — absolute inset para resolver height:100% */}
+            <div className="flex-1 relative">
+              <div className="absolute inset-0">
+              {polyline.length > 0 ? (
+                <GMap
+                  mapId={mapId}
+                  defaultBounds={{
+                    north: Math.max(...polyline.map((p) => p.lat)),
+                    south: Math.min(...polyline.map((p) => p.lat)),
+                    east:  Math.max(...polyline.map((p) => p.lng)),
+                    west:  Math.min(...polyline.map((p) => p.lng)),
+                    padding: 40,
+                  }}
+                  gestureHandling="greedy"
+                  disableDefaultUI={true}
+                  style={{ width: '100%', height: '100%' }}
+                >
                     {/* Ruta definida (índigo) */}
                     <Polyline
                       path={polyline}
@@ -681,6 +652,17 @@ export function RouteDetailPage() {
                       </div>
                     </AdvancedMarker>
 
+                    {/* Paradas intermedias */}
+                    {stops.sort((a, b) => a.order - b.order).map((s, i) => (
+                      <AdvancedMarker key={i} position={{ lat: s.lat, lng: s.lng }} title={s.name}>
+                        <div className="flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-lg ring-2 ring-amber-300/40">
+                          <MapPin className="h-2.5 w-2.5" />
+                          <span>P{i + 1}</span>
+                          <span className="opacity-80">{s.name}</span>
+                        </div>
+                      </AdvancedMarker>
+                    ))}
+
                     {/* Ruta de navegación: vehículo → primer punto (Directions API o fallback recto) */}
                     {route.vehicle_id && liveVehicles[route.vehicle_id] && activeRoutes[route.vehicle_id] === route.id && polyline.length > 0 && (() => {
                       const lv = liveVehicles[route.vehicle_id!];
@@ -719,10 +701,9 @@ export function RouteDetailPage() {
                       );
                     })()}
                   </GMap>
-                </APIProvider>
               ) : (
                 <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-                  {!apiKey ? 'API Key de Maps requerida' : 'Sin polilínea registrada'}
+                  Sin polilínea registrada
                 </div>
               )}
 
@@ -738,10 +719,11 @@ export function RouteDetailPage() {
                 <Minimize2 className="h-3.5 w-3.5" />
                 Compacto
               </button>
-            </div>
+              </div>{/* /absolute inset-0 */}
+            </div>{/* /flex-1 relative */}
 
             {/* Panel lateral: lista de conductores en ruta */}
-            <div className="border-l border-border/50 bg-card/40 flex flex-col overflow-hidden">
+            <div className="w-[280px] border-l border-border/50 bg-card/40 flex flex-col overflow-hidden">
               <div className="flex-shrink-0 px-4 pt-4 pb-3 border-b border-border/40">
                 <p className="text-xs font-semibold">Conductores en ruta</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">Selecciona para ver su recorrido</p>
@@ -819,7 +801,7 @@ export function RouteDetailPage() {
         routeName={route.name}
         open={assignOpen}
         onClose={() => setAssignOpen(false)}
-        currentAssignment={currentAssignment}
+        activeAssignments={activeAssignments}
       />
 
       {/* ── Confirmar eliminación ── */}

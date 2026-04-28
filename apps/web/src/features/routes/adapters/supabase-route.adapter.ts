@@ -18,6 +18,23 @@ function toLineStringWKT(points: Coordinate[]): string {
   return `LINESTRING(${points.map((p) => `${p.lng} ${p.lat}`).join(', ')})`;
 }
 
+/** Supabase may return jsonb columns from views as raw strings. Parse defensively. */
+function parseJsonField<T>(raw: unknown): T | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw) as T; } catch { return null; }
+  }
+  return raw as T;
+}
+
+function normalizeRow(row: Record<string, unknown>): RouteRow {
+  return {
+    ...row,
+    stops:          parseJsonField(row.stops),
+    polyline_coords: parseJsonField(row.polyline_coords),
+  } as RouteRow;
+}
+
 class SupabaseRouteAdapter implements IRouteRepository {
   private get db() {
     return createSupabaseBrowserClient();
@@ -29,7 +46,7 @@ class SupabaseRouteAdapter implements IRouteRepository {
       .select(LIST_SELECT)
       .order('created_at', { ascending: false });
     if (error) throw new Error(error.message);
-    return data as RouteRow[];
+    return (data as Record<string, unknown>[]).map(normalizeRow);
   }
 
   async findById(id: string): Promise<RouteRow | null> {
@@ -39,7 +56,7 @@ class SupabaseRouteAdapter implements IRouteRepository {
       .eq('id', id)
       .single();
     if (error) return null;
-    return data as RouteRow;
+    return normalizeRow(data as Record<string, unknown>);
   }
 
   async create(input: CreateRouteInput, userId: string, tenantId: string): Promise<void> {
@@ -55,7 +72,7 @@ class SupabaseRouteAdapter implements IRouteRepository {
       p_dest_wkt: `POINT(${destination.lng} ${destination.lat})`,
       p_origin_name: input.originName,
       p_dest_name: input.destinationName,
-      p_stops: JSON.stringify([]),
+      p_stops: JSON.stringify(input.stops ?? []),
       p_total_distance_m: input.totalDistanceM ?? 0,
       p_estimated_duration_s: input.estimatedDurationS ?? 0,
       p_deviation_threshold_m: input.deviationThresholdM ?? 50,

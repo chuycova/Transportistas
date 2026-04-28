@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Route, X, Trash2, ToggleLeft, ToggleRight, MapPin, Car, Navigation, UserCheck, User, ExternalLink } from 'lucide-react';
-import { APIProvider, Map as GMap, AdvancedMarker, Pin, Polyline } from '@vis.gl/react-google-maps';
+import { Map as GMap, AdvancedMarker, Pin, Polyline } from '@vis.gl/react-google-maps';
 import { useVehicles } from '../vehicles/use-vehicles';
 import { useUsers } from '../users/use-users';
 import type { MapMouseEvent } from '@vis.gl/react-google-maps';
@@ -12,6 +12,7 @@ import {
   useCreateRoute,
   useUpdateRouteStatus,
   useDeleteRoute,
+  useRouteAssignments,
   type RouteRow,
   type Coordinate,
 } from './use-routes';
@@ -93,7 +94,7 @@ function RouteMapDrawer({
   onMapClick: (c: Coordinate) => void;
   onClear: () => void;
 }) {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
+  const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID';
   const n = waypoints.length;
 
   const hint = n === 0
@@ -140,26 +141,24 @@ function RouteMapDrawer({
           </button>
         )}
       </div>
-      <APIProvider apiKey={apiKey}>
-        <GMap
-          mapId="DEMO_MAP_ID"
-          defaultZoom={12}
-          defaultCenter={DEFAULT_CENTER}
-          gestureHandling="greedy"
-          disableDefaultUI={false}
-          onClick={interactive ? handleClick : undefined}
-          style={{ width: '100%', height: '100%', cursor: interactive ? 'crosshair' : 'default' }}
-        >
-          {snappedPath && snappedPath.length >= 2 && (
-            <Polyline path={snappedPath} strokeColor="#10b981" strokeWeight={4} strokeOpacity={0.9} />
-          )}
-          {waypoints.map((w, i) => (
-            <AdvancedMarker key={w.id} position={w.coord} title={w.label || `Punto ${i + 1}`}>
-              <Pin background={pinColor(i)} borderColor="rgba(255,255,255,0.8)" glyphColor="white" glyph={pinGlyph(i)} scale={pinScale(i)} />
-            </AdvancedMarker>
-          ))}
-        </GMap>
-      </APIProvider>
+      <GMap
+        mapId={mapId}
+        defaultZoom={12}
+        defaultCenter={DEFAULT_CENTER}
+        gestureHandling="greedy"
+        disableDefaultUI={false}
+        onClick={interactive ? handleClick : undefined}
+        style={{ width: '100%', height: '100%', cursor: interactive ? 'crosshair' : 'default' }}
+      >
+        {snappedPath && snappedPath.length >= 2 && (
+          <Polyline path={snappedPath} strokeColor="#10b981" strokeWeight={4} strokeOpacity={0.9} />
+        )}
+        {waypoints.map((w, i) => (
+          <AdvancedMarker key={w.id} position={w.coord} title={w.label || `Punto ${i + 1}`}>
+            <Pin background={pinColor(i)} borderColor="rgba(255,255,255,0.8)" glyphColor="white" glyph={pinGlyph(i)} scale={pinScale(i)} />
+          </AdvancedMarker>
+        ))}
+      </GMap>
     </div>
   );
 }
@@ -290,17 +289,30 @@ function CreateRouteModal({ onClose }: { onClose: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || !snappedPath) return;
+
+    // Waypoints intermedios (excluir origen[0] y destino[last]) → stops en BD
+    const intermediateStops = waypoints
+      .slice(1, -1)
+      .map((w, i) => ({
+        name:     w.label || `Parada ${i + 1}`,
+        lat:      w.coord.lat,
+        lng:      w.coord.lng,
+        order:    i + 1,
+        radius_m: 100,
+      }));
+
     try {
       await create.mutateAsync({
-        name: name.trim(),
-        description: description.trim() || undefined,
-        polylinePoints: snappedPath,
-        originName: originLabel.trim(),
-        destinationName: destLabel.trim(),
+        name:                name.trim(),
+        description:         description.trim() || undefined,
+        polylinePoints:      snappedPath,
+        originName:          originLabel.trim(),
+        destinationName:     destLabel.trim(),
+        stops:               intermediateStops,
         deviationThresholdM: Number(deviationThresholdM) || 50,
-        totalDistanceM: distanceM ?? undefined,
-        estimatedDurationS: durationS ?? undefined,
-        vehicleId: vehicleId || undefined,
+        totalDistanceM:      distanceM ?? undefined,
+        estimatedDurationS:  durationS ?? undefined,
+        vehicleId:           vehicleId || undefined,
       });
       onClose();
     } catch { /* error shown via create.error */ }
@@ -732,31 +744,55 @@ export function RoutesPage() {
       </AnimatePresence>
 
       {/* Modal de asignación de conductor */}
-      <AnimatePresence>
-        {assignTarget && (() => {
-          // Resolver asignación actual del assignTarget para pasarla al modal
-          const aVehicle  = assignTarget.vehicle_id ? vehicleMap[assignTarget.vehicle_id] : null;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const aDriverId = aVehicle ? (aVehicle as any).assigned_driver_id as string | null : null;
-          const aDriver   = aDriverId ? userMap[aDriverId] : null;
-          const currentAssignment = (aDriver && aVehicle)
-            ? {
-                driverId:     aDriverId!,
-                driverName:   aDriver.full_name,
-                vehiclePlate: (aVehicle as typeof aVehicle & { plate: string }).plate ?? '',
-              }
-            : null;
-          return (
-            <AssignDriverModal
-              routeId={assignTarget.id}
-              routeName={assignTarget.name}
-              open={!!assignTarget}
-              onClose={() => setAssignTarget(null)}
-              currentAssignment={currentAssignment}
-            />
-          );
-        })()}
-      </AnimatePresence>
+      {assignTarget && (
+        <AssignDriverModalWrapper
+          routeId={assignTarget.id}
+          routeName={assignTarget.name}
+          onClose={() => setAssignTarget(null)}
+          vehicleMap={vehicleMap}
+          userMap={userMap}
+        />
+      )}
     </div>
+  );
+}
+
+// ── Wrapper that fetches assignments and enriches them for the modal ─────────
+function AssignDriverModalWrapper({
+  routeId,
+  routeName,
+  onClose,
+  vehicleMap,
+  userMap,
+}: {
+  routeId: string;
+  routeName: string;
+  onClose: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  vehicleMap: Record<string, any>;
+  userMap: Record<string, { id: string; full_name: string }>;
+}) {
+  const { data: assignments = [] } = useRouteAssignments(routeId);
+
+  const activeAssignments = assignments
+    .filter((a) => a.is_active)
+    .map((a) => {
+      const v = vehicleMap[a.vehicle_id];
+      const d = userMap[a.driver_id];
+      return {
+        driverId: a.driver_id,
+        driverName: d?.full_name ?? a.driver_id.slice(0, 8),
+        vehiclePlate: v?.plate ?? a.vehicle_id.slice(0, 8),
+      };
+    });
+
+  return (
+    <AssignDriverModal
+      routeId={routeId}
+      routeName={routeName}
+      open
+      onClose={onClose}
+      activeAssignments={activeAssignments}
+    />
   );
 }

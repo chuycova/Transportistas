@@ -9,7 +9,6 @@
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import {
-  APIProvider,
   Map as GMap,
   AdvancedMarker,
   Polyline,
@@ -21,6 +20,7 @@ import { TrafficLayer } from './traffic-layer';
 import { useTrackingStore } from '../../stores/use-tracking-store';
 import { useVehicles } from '../vehicles/use-vehicles';
 import { useRoutes } from '../routes/use-routes';
+import { useAuth } from '../auth/auth-provider';
 import type { LocationWebSocketPayload } from '@zona-zero/domain';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
@@ -308,14 +308,15 @@ export function LiveMap() {
   // sobreescribe la posición actual → marker retrocede cada tick.
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
-  const liveVehicles   = useTrackingStore((s) => s.vehicles);
-  const trails         = useTrackingStore((s) => s.trails);
-  const activeRoutes   = useTrackingStore((s) => s.activeRoutes);
-  const navRoutes      = useTrackingStore((s) => s.navRoutes);
-  const updateVehicle  = useTrackingStore((s) => s.updateVehicleLocation);
-  const appendTrail    = useTrackingStore((s) => s.appendTrail);
-  const isConnected    = useTrackingStore((s) => s.isConnected);
-  const flashVehicleId = useTrackingStore((s) => s.flashVehicleId);
+  const liveVehicles        = useTrackingStore((s) => s.vehicles);
+  const trails              = useTrackingStore((s) => s.trails);
+  const activeRoutes        = useTrackingStore((s) => s.activeRoutes);
+  const navRoutes           = useTrackingStore((s) => s.navRoutes);
+  const updateVehicle       = useTrackingStore((s) => s.updateVehicleLocation);
+  const appendTrail         = useTrackingStore((s) => s.appendTrail);
+  const isConnected         = useTrackingStore((s) => s.isConnected);
+  const flashVehicleId      = useTrackingStore((s) => s.flashVehicleId);
+  const hiddenVehicleIds    = useTrackingStore((s) => s.hiddenVehicleIds);
 
   const { data: dbVehicles = [] } = useVehicles();
   const { data: routes    = [] } = useRoutes();
@@ -326,10 +327,13 @@ export function LiveMap() {
   // Solicitar permiso de notificaciones una vez al montar
   useEffect(() => { requestNotificationPermission(); }, []);
 
-  // Hydrate latest positions al montar
+  const { session } = useAuth();
+  const tenantId = session?.user?.user_metadata?.tenant_id as string | undefined;
+
+  // Hydrate latest positions whenever the session (re-)resolves.
+  // Using session directly from context avoids the async getSession() race on
+  // page reload where getSession() briefly returns null before cookies are read.
   const hydrate = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const tenantId = session?.user?.user_metadata?.tenant_id as string | undefined;
     if (!tenantId) return;
 
     const { data } = await supabase.rpc('get_latest_locations', { p_tenant_id: tenantId });
@@ -347,8 +351,9 @@ export function LiveMap() {
       updateVehicle(payload);
       appendTrail(row.vehicle_id, row.lat, row.lng);
     }
-  }, [supabase, updateVehicle, appendTrail]);
+  }, [supabase, tenantId, updateVehicle, appendTrail]);
 
+  // Re-run hydrate every time tenantId becomes available (covers page reload race)
   useEffect(() => { void hydrate(); }, [hydrate]);
 
   // ── Lookup vehicleId → DB record ──────────────────────────────────────────
@@ -372,12 +377,41 @@ export function LiveMap() {
   // Limpiar notificados cuando vuelven a ruta
   liveList.filter((v) => !v.off).forEach((v) => notifiedRef.current.delete(v.v));
 
-  // ── Route consumption: una ruta activa por vehículo ───────────────────────
-  // Asocia cada ruta con su vehículo y divide en segmento recorrido/pendiente
-  // SOLO para la ruta que el vehículo está activamente trackeando
+  // ── Rutas completadas hoy ────────────────────────────────────────────────────
+  // Se consulta una vez al montar (cuando tenantId está disponible).
+  // La fecha de inicio del día se recalcula solo cuando cambia el día (useMemo con []).
+  const todayStart = useMemo(() => {
+    const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString();
+  }, []);
+  const [completedTodayRouteIds, setCompletedTodayRouteIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!tenantId) return;
+    void supabase
+      .from('trips')
+      .select('route_id')
+      .eq('status', 'completed')
+      .gte('completed_at', todayStart)
+      .not('completed_at', 'is', null)
+      .then(({ data }) => {
+        if (data) setCompletedTodayRouteIds(new Set(data.map((t: { route_id: string }) => t.route_id)));
+      });
+  }, [supabase, tenantId, todayStart]);
+
+  // ── Route consumption ────────────────────────────────────────────────────────
+  // Solo se dibuja una ruta si:
+  //   (a) hay un vehículo activamente trackeándola ahora mismo, O
+  //   (b) fue completada hoy (sirve para revisar el recorrido del día)
+  // Rutas de días anteriores no se muestran aunque sigan con status='active'.
   const activeRouteIds = new Set(Object.values(activeRoutes));
   const routeSegments = routes
-    .filter((r) => r.status === 'active' && r.polyline_coords)
+    .filter((r) => {
+      if (!r.polyline_coords) return false;
+      // (a) tracking activo en este momento
+      if (activeRouteIds.has(r.id)) return true;
+      // (b) completada hoy
+      if (completedTodayRouteIds.has(r.id)) return true;
+      return false;
+    })
     .flatMap((r) => {
       const polyline = (r.polyline_coords as [number, number][]).map(
         ([lng, lat]) => ({ lat, lng }),
@@ -385,12 +419,12 @@ export function LiveMap() {
 
       if (!polyline[0]) return [];
 
-      // Usar el vehículo REALMENTE asignado y que esté activamente trackeando ESTA ruta
-      const assignedVehicle = r.vehicle_id ? liveVehicles[r.vehicle_id] : undefined;
+      const assignedVehicle = r.vehicle_id
+        ? (hiddenVehicleIds.has(r.vehicle_id) ? undefined : liveVehicles[r.vehicle_id])
+        : undefined;
       const isActivelyTracked = activeRouteIds.has(r.id);
 
       if (!assignedVehicle || !isActivelyTracked) {
-        // Sin vehículo activo en ESTA ruta → ruta completa como pendiente
         return [{ id: r.id, consumed: [] as LatLng[], remaining: polyline }];
       }
 
@@ -398,14 +432,26 @@ export function LiveMap() {
       return [{ id: r.id, consumed, remaining }];
     });
 
+
   // ── Centro del mapa ────────────────────────────────────────────────
   const mapCenter = liveList.length > 0
     ? { lat: liveList[0].lat, lng: liveList[0].lng }
     : DEFAULT_CENTER;
 
-  // ── Estado del mapa (isDark persiste en localStorage) ────────────
+  // ── Estado del mapa — persiste en localStorage ──────────────────
   const [isSatellite, setIsSatellite] = useState(false);
-  const [showTraffic, setShowTraffic] = useState(true);
+  const [showTraffic, setShowTraffic] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    const stored = localStorage.getItem('zz-map-traffic');
+    return stored !== null ? stored === '1' : true;
+  });
+  const toggleTraffic = useCallback(() => {
+    setShowTraffic((prev) => {
+      const next = !prev;
+      localStorage.setItem('zz-map-traffic', next ? '1' : '0');
+      return next;
+    });
+  }, []);
   const [isDark, setIsDark] = useState(() => {
     if (typeof window === 'undefined') return true;
     const stored = localStorage.getItem('zz-map-dark');
@@ -476,7 +522,7 @@ export function LiveMap() {
         {/* Toggle tráfico */}
         <button
           type="button"
-          onClick={() => setShowTraffic((t) => !t)}
+          onClick={toggleTraffic}
           className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-lg border transition-all ${
             showTraffic
               ? 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-700'
@@ -514,8 +560,7 @@ export function LiveMap() {
 
       {/* ── Mapa ── */}
       <div className="w-full h-full">
-        <APIProvider apiKey={apiKey}>
-          <GMap
+        <GMap
             mapId={mapId || 'DEMO_MAP_ID'}
             defaultZoom={13}
             defaultCenter={mapCenter}
@@ -565,6 +610,7 @@ export function LiveMap() {
             {/* Ruta de navegación: vehículo → primer punto de la ruta asignada */}
             {/* Azul eléctrico para distinguirse de la ruta asignada (naranja) y de los caminos */}
             {Object.entries(activeRoutes).map(([vehicleId, routeId]) => {
+              if (hiddenVehicleIds.has(vehicleId)) return null;
               const vehicleLive = liveVehicles[vehicleId];
               if (!vehicleLive) return null;
               const route = routes.find((r) => r.id === routeId);
@@ -596,6 +642,7 @@ export function LiveMap() {
 
             {/* Trails de posición (breadcrumb) por vehículo — segmentados por on/off route */}
             {liveList.map((v) => {
+              if (hiddenVehicleIds.has(v.v)) return null;
               const trail = trails[v.v];
               if (!trail || trail.length < 2) return null;
               const baseColor = vehicleMap[v.v]?.color ?? '#6366f1';
@@ -629,7 +676,7 @@ export function LiveMap() {
             })}
 
             {/* Markers de vehículos en vivo */}
-            {liveList.map((v) => {
+            {liveList.filter((v) => !hiddenVehicleIds.has(v.v)).map((v) => {
               const db    = vehicleMap[v.v];
               const color = db?.color ?? '#6366f1';
               const label = db?.alias ?? db?.plate ?? v.v.slice(0, 6);
@@ -694,7 +741,6 @@ export function LiveMap() {
               );
             })}
           </GMap>
-        </APIProvider>
       </div>
 
       {/* Panel de dev (solo en desarrollo) */}

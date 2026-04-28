@@ -2,8 +2,24 @@ import { create } from 'zustand';
 import type { LocationWebSocketPayload } from '@zona-zero/domain';
 
 const TRAIL_MAX = 200;
+const HIDDEN_VEHICLES_KEY = 'zz-hidden-vehicles';
 
 export interface TrailPoint { lat: number; lng: number; off?: boolean }
+
+// ── localStorage helpers (safe for SSR) ──────────────────────────────────────
+function loadHiddenIds(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(HIDDEN_VEHICLES_KEY);
+    return raw ? new Set<string>(JSON.parse(raw) as string[]) : new Set();
+  } catch { return new Set(); }
+}
+
+function saveHiddenIds(ids: Set<string>) {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(HIDDEN_VEHICLES_KEY, JSON.stringify([...ids])); }
+  catch { /* ignore quota errors */ }
+}
 
 interface TrackingState {
   vehicles: Record<string, LocationWebSocketPayload>;
@@ -26,6 +42,12 @@ interface TrackingState {
    * El mapa lo consume y lo limpia después de hacer panTo.
    */
   focusModeVehicleId: string | null;
+
+  /**
+   * Vehículos ocultos en el mapa. Persiste en localStorage.
+   * Al ocultar un vehículo también se ocultan sus rutas y trail.
+   */
+  hiddenVehicleIds: Set<string>;
 
   updateVehicleLocation: (payload: LocationWebSocketPayload) => void;
   appendTrail: (vehicleId: string, lat: number, lng: number, off?: boolean) => void;
@@ -51,6 +73,9 @@ interface TrackingState {
   clearNavRoute: (vehicleId: string) => void;
   /** Limpia el trail de un vehículo sin borrar su posición en vivo */
   clearVehicleTrail: (vehicleId: string) => void;
+
+  /** Alterna visibilidad de un vehículo en el mapa; persiste en localStorage */
+  toggleVehicleVisibility: (vehicleId: string) => void;
 }
 
 export const useTrackingStore = create<TrackingState>((set, get) => ({
@@ -62,6 +87,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
   isConnected: false,
   flashVehicleId: null,
   focusModeVehicleId: null,
+  hiddenVehicleIds: loadHiddenIds(),
 
   updateVehicleLocation: (payload) =>
     set((state) => ({
@@ -86,10 +112,8 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     }),
 
   flashVehicle: (vehicleId) => {
-    // Evitar limpiar un flash de un vehículo distinto que ya está corriendo
     set({ flashVehicleId: vehicleId });
     setTimeout(() => {
-      // Solo limpiar si el vehicleId sigue siendo el mismo (no fue sobrescrito)
       if (get().flashVehicleId === vehicleId) {
         set({ flashVehicleId: null });
       }
@@ -117,5 +141,14 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     set((state) => {
       const { [vehicleId]: _, ...rest } = state.navRoutes;
       return { navRoutes: rest };
+    }),
+
+  toggleVehicleVisibility: (vehicleId) =>
+    set((state) => {
+      const next = new Set(state.hiddenVehicleIds);
+      if (next.has(vehicleId)) { next.delete(vehicleId); }
+      else { next.add(vehicleId); }
+      saveHiddenIds(next);
+      return { hiddenVehicleIds: next };
     }),
 }));

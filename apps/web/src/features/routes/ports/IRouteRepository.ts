@@ -6,7 +6,10 @@ export interface RouteStop {
   address?: string | null;
   lat: number;
   lng: number;
-  order_index: number;
+  /** Campo en la BD: `order` (entero) */
+  order: number;
+  /** Radio de la geocerca de la parada en metros */
+  radius_m?: number;
 }
 
 export interface RouteRow {
@@ -41,6 +44,7 @@ export interface CreateRouteInput {
   polylinePoints: Coordinate[];
   originName: string;
   destinationName: string;
+  stops?: RouteStop[];
   totalDistanceM?: number;
   estimatedDurationS?: number;
   deviationThresholdM?: number;

@@ -14,6 +14,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { APIProvider } from '@vis.gl/react-google-maps';
 import { Map as MapIcon, Truck, LogOut, Route as RouteIcon, History, Settings, Users, ShieldAlert, PackagePlus, AlertTriangle, LayoutDashboard } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SocketInitialize } from '@/features/dashboard/socket-manager';
@@ -144,6 +145,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { signOut }   = useAuth();
   const pathname      = usePathname();
   const unreadAlerts  = useUnreadAlertCount();
+  const mapsApiKey    = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
 
   // El mapa persistente es visible solo en /map.
   // En '/' se muestra el dashboard de resumen (DashboardPage).
@@ -232,27 +234,29 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Toast container — rendered once, fixed position, z-[9999] */}
       <NotificationToastContainer />
 
-      <div className="flex flex-1 overflow-hidden relative">
+      <APIProvider apiKey={mapsApiKey}>
+        <div className="flex flex-1 overflow-hidden relative">
 
-        {/* Dashboard (sidebar + mapa) — siempre montado, visible solo en "/" */}
-        <div
-          className="flex flex-1 overflow-hidden absolute inset-0 z-0"
-          style={{ visibility: isMapPage ? 'visible' : 'hidden' }}
-          aria-hidden={!isMapPage}
-        >
-          <VehicleListSidebar />
-          <div className="relative flex-1">
-            <LiveMap />
+          {/* Dashboard (sidebar + mapa) — siempre montado, visible solo en "/map" */}
+          <div
+            className="flex flex-1 overflow-hidden absolute inset-0 z-0"
+            style={{ visibility: isMapPage ? 'visible' : 'hidden' }}
+            aria-hidden={!isMapPage}
+          >
+            <VehicleListSidebar />
+            <div className="relative flex-1">
+              <LiveMap />
+            </div>
           </div>
-        </div>
 
-        {/* Rutas internas (/vehicles, /routes, etc.) — sobre el mapa */}
-        {!isMapPage && (
-          <main className="flex-1 flex flex-col overflow-hidden z-10 bg-background">
-            {children}
-          </main>
-        )}
-      </div>
+          {/* Rutas internas (/vehicles, /routes, etc.) — sobre el mapa */}
+          {!isMapPage && (
+            <main className="flex-1 flex flex-col overflow-hidden z-10 bg-background">
+              {children}
+            </main>
+          )}
+        </div>
+      </APIProvider>
     </div>
   );
 }
